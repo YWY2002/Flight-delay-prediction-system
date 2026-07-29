@@ -1,0 +1,50 @@
+# Airport reference data.
+#
+# This is DOMAIN DATA, not deployment configuration. KJFK's latitude is the same
+# on your laptop, in CI, and in production — so it lives in version control and
+# gets code-reviewed, rather than being smuggled through environment variables.
+#
+# Which of these airports are *active* IS a deployment setting: see FDP_AIRPORTS
+# in .env.example.
+#
+# Fields:
+#   icao          - ICAO identifier, 4 uppercase letters.
+#   name          - Human-readable, for logs and dashboards only.
+#   lat / lon     - Airport reference point, decimal degrees (WGS84, lon negative
+#                   for west). Used to derive the OpenSky query bounding box.
+#   metar_station - The METAR reporting station for this field. Usually identical
+#                   to `icao`, but NOT always (some airports have no on-field
+#                   station and borrow a neighbour's). Modelled explicitly so the
+#                   exception is representable — see plan §14, "Weather station
+#                   != airport edge cases".
+#
+# TODO(phase-1): verify lat/lon and station ids against an authoritative source
+# (FAA NASR / airport charts) before trusting distance-based features. Values
+# below are the published airport reference points to ~4 decimal places, which is
+# plenty for a 60 nm bounding box but should be confirmed before they feed
+# approach-detection thresholds measured in hundreds of feet.
+#
+# Runway headings (needed for the crosswind feature, plan 3.7) are deliberately
+# NOT here yet. Same just-in-time rule we applied to docker-compose: reference
+# data arrives in the commit that introduces the code consuming it (Phase 3).
+
+[[airports]]
+icao = "KJFK"
+name = "John F. Kennedy International"
+lat = 40.6398
+lon = -73.7789
+metar_station = "KJFK"
+
+[[airports]]
+icao = "KEWR"
+name = "Newark Liberty International"
+lat = 40.6925
+lon = -74.1687
+metar_station = "KEWR"
+
+[[airports]]
+icao = "KORD"
+name = "Chicago O'Hare International"
+lat = 41.9786
+lon = -87.9048
+metar_station = "KORD"
