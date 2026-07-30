@@ -1,7 +1,7 @@
 # Airport reference data.
 #
 # This is DOMAIN DATA, not deployment configuration. KJFK's latitude is the same
-# on your laptop, in CI, and in production — so it lives in version control and
+# on your laptop, in CI, and in production - so it lives in version control and
 # gets code-reviewed, rather than being smuggled through environment variables.
 #
 # Which of these airports are *active* IS a deployment setting: see FDP_AIRPORTS
@@ -15,7 +15,7 @@
 #   metar_station - The METAR reporting station for this field. Usually identical
 #                   to `icao`, but NOT always (some airports have no on-field
 #                   station and borrow a neighbour's). Modelled explicitly so the
-#                   exception is representable — see plan §14, "Weather station
+#                   exception is representable - see plan §14, "Weather station
 #                   != airport edge cases".
 #
 # TODO(phase-1): verify lat/lon and station ids against an authoritative source

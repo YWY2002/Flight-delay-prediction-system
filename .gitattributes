@@ -1,0 +1,33 @@
+# Line-ending policy: LF everywhere, in the repo AND in the working tree.
+#
+# Why this file exists: development happens on Windows, CI runs on Linux, and
+# Docker images are Linux. Without a policy, git's core.autocrlf rewrites files
+# on checkout while the `mixed-line-ending` pre-commit hook rewrites them back
+# to LF, so the two fight each other and every file shows as modified. Git even
+# warns about it directly:
+#
+#   warning: in the working copy of 'CLAUDE.md', LF will be replaced by CRLF
+#            the next time Git touches it
+#
+# Line endings are git's job, not a linter's. `text=auto eol=lf` tells git to
+# detect text files and use LF on both sides, which ends the churn. The
+# pre-commit hook then becomes a harmless second opinion rather than a
+# combatant.
+#
+# Practical payoff: a one-line change shows up as a one-line diff instead of a
+# whole-file rewrite, and shell scripts copied into a Linux container do not
+# fail with the classic `\r: command not found`.
+* text=auto eol=lf
+
+# Explicitly binary: never touch these, and never try to diff them as text.
+*.parquet binary
+*.png binary
+*.jpg binary
+*.pkl binary
+*.joblib binary
+*.zip binary
+*.gz binary
+
+# Generated lockfile: mark as a diff-suppressed generated file so reviews are
+# not swamped by thousands of hash lines. Still fully version controlled.
+uv.lock linguist-generated=true -diff

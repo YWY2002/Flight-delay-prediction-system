@@ -1,0 +1,120 @@
+# Pre-commit hooks: the local half of the quality gate.
+# CI (Phase 7) runs the same checks so nothing depends on trust.
+#
+# Install once (writes .git/hooks/, so run it yourself):
+#   uv run pre-commit install
+#
+# Run against everything without committing:
+#   uv run pre-commit run --all-files
+
+# Plain `pre-commit install` wires up BOTH hook types thanks to this.
+# Without it, the pre-push pytest hook would be silently skipped.
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  # ---------------------------------------------------------------------------
+  # Generic file hygiene. These have no version relationship to our code, so
+  # pinning them in a separate `rev` is fine (kept current via
+  # `uv run pre-commit autoupdate`).
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+
+      # Parses config files we actually depend on. A malformed airports.toml
+      # would otherwise surface as a confusing runtime crash.
+      - id: check-toml
+      - id: check-yaml
+
+      # This project generates Parquet, CSVs, and model artifacts. Without this
+      # hook a stray `git add .` silently commits a data file, and git history
+      # is effectively append-only. This is the highest-value hook here.
+      - id: check-added-large-files
+        args: [--maxkb=500]
+
+      # Catches accidentally committed SSH / PEM private keys. Cheap insurance.
+      - id: detect-private-key
+
+      # Development is on Windows, CI runs on Linux. Both of these prevent the
+      # classic cross-platform failures: filenames differing only by case
+      # (fine on Windows, two distinct files on Linux), and CRLF/LF churn that
+      # makes a one-line change show up as a whole-file rewrite.
+      - id: check-case-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # ---------------------------------------------------------------------------
+  # Project rule from CLAUDE.md: plain dashes only, never an em dash.
+  #
+  # `pygrep` fails the hook when the pattern MATCHES, which is what we want.
+  #
+  # The pattern is the UTF-8 byte sequence for the character rather than the
+  # character itself. pre-commit compiles pygrep patterns as BYTES regexes, so
+  # a `\uXXXX` escape is invalid here, but `\xNN` bytes work. Writing it this
+  # way means this config file does not trip its own hook, so no self-exclusion
+  # is needed and the rule genuinely applies everywhere.
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: no-em-dash
+        name: forbid em dash (use a plain dash)
+        entry: '\xe2\x80\x94'
+        language: pygrep
+        types: [text]
+        # The plan document and CLAUDE.md predate the rule / quote the character
+        # itself, so they are out of scope. uv.lock is generated, not authored.
+        exclude: '^(flight-delay-pipeline-plan\.md|CLAUDE\.md|uv\.lock)$'
+
+  # ---------------------------------------------------------------------------
+  # Our real toolchain, run via `uv` on purpose.
+  #
+  # Using `language: system` + `uv run` instead of the upstream ruff/mypy hook
+  # repos means uv.lock is the SINGLE source of version truth. The alternative
+  # pins each tool twice (here and in uv.lock), they drift, and you get hooks
+  # that pass while CI fails on identical code.
+  #
+  # It also fixes a specific mypy trap: pre-commit's mypy hook runs in an
+  # isolated venv with no access to project dependencies, so it cannot see
+  # pydantic and emits a flood of phantom errors.
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types_or: [python, pyi]
+
+      - id: ruff-check
+        name: ruff lint
+        # --fix auto-repairs what it safely can; anything left fails the commit.
+        entry: uv run ruff check --fix
+        language: system
+        types_or: [python, pyi]
+
+      - id: mypy
+        name: mypy (strict)
+        entry: uv run mypy
+        language: system
+        types_or: [python, pyi]
+        # mypy needs the whole import graph to be correct: a change in one file
+        # can break a type contract in another that pre-commit did not stage.
+        # `files` in pyproject.toml defines the real scope.
+        pass_filenames: false
+
+      # -- pre-push only -----------------------------------------------------
+      # Deliberately NOT on pre-commit. A commit is a local checkpoint (WIP,
+      # mid-refactor, bisect points); gating that on a green suite fights how
+      # git is meant to be used and pushes people toward `--no-verify`, which
+      # disables EVERY hook above, including the secret scan. A push is where
+      # work becomes shared, so that is the right gate for tests.
+      - id: pytest
+        name: pytest (pre-push)
+        entry: uv run pytest
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
