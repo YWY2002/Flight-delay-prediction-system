@@ -94,6 +94,24 @@ class Settings(BaseSettings):
         description="FAA NAS status: ground stops / GDPs change on a minutes timescale.",
     )
 
+    # ---- HTTP --------------------------------------------------------------
+    opensky_token_url: str = Field(
+        default=(
+            "https://auth.opensky-network.org/auth/realms/opensky-network"
+            "/protocol/openid-connect/token"
+        ),
+        description="OAuth2 client-credentials token endpoint (Keycloak).",
+    )
+    http_timeout_seconds: float = Field(
+        default=10.0,
+        gt=0.0,
+        description=(
+            "Timeout for every outbound HTTP call. Explicit on purpose: a request "
+            "with no timeout can hang forever and silently wedge the poller, which "
+            "looks like 'the data stopped' rather than like an error."
+        ),
+    )
+
     # ---- Storage -----------------------------------------------------------
     data_dir: Path = Field(
         default=PROJECT_ROOT / "data",
