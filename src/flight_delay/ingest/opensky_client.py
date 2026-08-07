@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, ClassVar
 
 import httpx
 from pydantic import (
@@ -32,14 +32,17 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from tenacity import Retrying
 
 from flight_delay.common.airports import BoundingBox
 from flight_delay.common.config import Settings
+from flight_delay.ingest.credit_budget import CreditBudget
 from flight_delay.ingest.opensky_auth import (
     OpenSkyAuth,
     OpenSkyTokenProvider,
     token_provider_from_settings,
 )
+from flight_delay.ingest.retry import build_retrying, call_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -81,16 +84,40 @@ _CREDITS_HEADER = "X-Rate-Limit-Remaining"
 
 
 class OpenSkyApiError(RuntimeError):
-    """A `/states/all` call failed."""
+    """A `/states/all` call failed.
+
+    Base of the API error family, and non-retryable by default. Subclasses opt
+    IN to retrying, so a new error type is safe until someone deliberately
+    decides otherwise.
+    """
+
+    retryable: ClassVar[bool] = False
+
+
+class OpenSkyTransportError(OpenSkyApiError):
+    """The API could not be reached: DNS, TLS, connection reset, timeout.
+
+    Nothing was learned about the request's validity, so retrying is reasonable.
+    """
+
+    retryable: ClassVar[bool] = True
+
+
+class OpenSkyServerError(OpenSkyApiError):
+    """OpenSky returned 5xx. Their problem, not ours, and usually temporary."""
+
+    retryable: ClassVar[bool] = True
 
 
 class OpenSkyRateLimitError(OpenSkyApiError):
-    """The daily credit budget or a rate limit was exhausted (HTTP 429).
+    """A rate limit or the daily credit budget was hit server-side (HTTP 429).
 
-    Its own type because the correct response differs from other failures: back
-    off hard and stop polling for a while, rather than retrying promptly. Task
-    1.3 branches on this.
+    Retryable, but on the server's terms rather than ours: `retry_after_seconds`
+    carries the `Retry-After` header, and the retry policy prefers it over its
+    own backoff. Guessing something shorter just earns another 429.
     """
+
+    retryable: ClassVar[bool] = True
 
     def __init__(self, message: str, retry_after_seconds: float | None = None) -> None:
         super().__init__(message)
@@ -224,6 +251,8 @@ class OpenSkyClient:
         base_url: str = DEFAULT_BASE_URL,
         owns_client: bool = False,
         token_provider: OpenSkyTokenProvider | None = None,
+        budget: CreditBudget | None = None,
+        retrying: Retrying | None = None,
     ) -> None:
         """
         Args:
@@ -232,11 +261,22 @@ class OpenSkyClient:
                 supplied the client, since closing someone else's client is a
                 surprising side effect.
             token_provider: Closed alongside the client when we own it.
+            budget: Daily credit gate. None means unmetered, which is right for
+                tests and for mock transports but never for the live API.
+            retrying: Retry controller. None means no retries, so a single
+                failure surfaces immediately.
         """
         self._http = http_client
         self._base_url = base_url.rstrip("/")
         self._owns_client = owns_client
         self._token_provider = token_provider
+        self._budget = budget
+        self._retrying = retrying
+
+    @property
+    def budget(self) -> CreditBudget | None:
+        """The credit budget, exposed for logging and Phase 8 metrics."""
+        return self._budget
 
     # ---- lifecycle ---------------------------------------------------------
 
@@ -255,30 +295,53 @@ class OpenSkyClient:
     # ---- API ---------------------------------------------------------------
 
     def get_states(self, bbox: BoundingBox) -> StatesResponse:
-        """Fetch all aircraft state vectors inside `bbox`.
+        """Fetch all aircraft state vectors inside `bbox`, with budget and retry.
+
+        Ordering is deliberate: the budget gate sits INSIDE the retry loop, so
+        every attempt is charged. Charging only the logical call would let a
+        retry storm spend several times its share of a budget that exists
+        precisely to stop that.
+        """
+        if self._retrying is None:
+            return self._get_states_once(bbox)
+        return call_with_retry(self._retrying, lambda: self._get_states_once(bbox))
+
+    def _get_states_once(self, bbox: BoundingBox) -> StatesResponse:
+        """A single attempt: reserve credit, call, parse, reconcile.
 
         The bbox field names were chosen in `airports.py` to match OpenSky's
         query parameters exactly, so this is a direct dump with no renaming step
         that could transpose a latitude and a longitude.
         """
+        # Proactive gate. Raises CreditBudgetExhausted (non-retryable) before
+        # any network call, so an exhausted budget costs nothing further.
+        if self._budget is not None:
+            self._budget.consume(1)
+
         url = f"{self._base_url}/states/all"
         params = bbox.model_dump()
 
         try:
             response = self._http.get(url, params=params)
         except httpx.HTTPError as exc:
-            raise OpenSkyApiError(f"Could not reach the OpenSky API: {exc}") from exc
+            raise OpenSkyTransportError(f"Could not reach the OpenSky API: {exc}") from exc
 
         self._raise_for_status(response)
 
         try:
             payload = StatesResponse.model_validate_json(response.content)
         except ValueError as exc:
+            # Not retryable: the same request would return the same malformed
+            # body. This is a contract change, and it needs a human.
             raise OpenSkyApiError(
                 f"OpenSky /states/all response did not match the expected shape: {exc}"
             ) from exc
 
         credits_remaining = _parse_credits(response.headers)
+        # The server's count is authoritative. Local counting drifts across
+        # restarts and across processes sharing one account.
+        if credits_remaining is not None and self._budget is not None:
+            self._budget.reconcile(credits_remaining)
         logger.info(
             "opensky states fetched: bbox=(%.3f,%.3f,%.3f,%.3f) aircraft=%d credits_remaining=%s",
             bbox.lamin,
@@ -309,6 +372,11 @@ class OpenSkyClient:
                 "FDP_OPENSKY_CLIENT_SECRET."
             )
 
+        if response.status_code >= 500:
+            raise OpenSkyServerError(f"OpenSky API returned HTTP {response.status_code}.")
+
+        # Remaining 4xx (bad bbox, bad path) are our fault and deterministic.
+        # Retrying would just reproduce them.
         if response.status_code >= 400:
             raise OpenSkyApiError(f"OpenSky API returned HTTP {response.status_code}.")
 
@@ -354,4 +422,13 @@ def client_from_settings(settings: Settings) -> OpenSkyClient:
         base_url=settings.opensky_base_url,
         owns_client=True,
         token_provider=provider,
+        # Budget and retry are ON by default for a real client. Making them
+        # opt-in would mean the safe configuration is the one you have to
+        # remember, and the live API is exactly where forgetting is costly.
+        budget=CreditBudget(settings.opensky_daily_credits),
+        retrying=build_retrying(
+            max_attempts=settings.opensky_max_retry_attempts,
+            initial_backoff_seconds=settings.opensky_initial_backoff_seconds,
+            max_backoff_seconds=settings.opensky_max_backoff_seconds,
+        ),
     )

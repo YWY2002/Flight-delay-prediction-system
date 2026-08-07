@@ -61,7 +61,7 @@
 
 **Outcome:** A repo where `docker compose up` runs, tests pass, and CI is green on the first commit.
 
-- [ ] 0.1 Create mono-repo layout:
+- [x] 0.1 Create mono-repo layout:
   ```
   flight-delay-pipeline/
   ├── src/
@@ -77,14 +77,28 @@
   ├── pyproject.toml
   └── docker-compose.yml
   ```
-- [ ] 0.2 Init `pyproject.toml` with `uv`; pin dependencies; add `ruff` + `mypy` + `pytest`.
-- [ ] 0.3 Add `pre-commit` hooks (ruff format, ruff lint, mypy).
-- [ ] 0.4 Central config with Pydantic Settings: airports list, bounding boxes, poll intervals, storage paths — all via env vars / `.env` (never hardcode).
-- [ ] 0.5 Secrets: `.env` locally (gitignored), GitHub Actions secrets for CI. Store OpenSky client id/secret here.
+- [x] 0.2 Init `pyproject.toml` with `uv`; pin dependencies; add `ruff` + `mypy` + `pytest`.
+- [x] 0.3 Add `pre-commit` hooks (ruff format, ruff lint, mypy).
+  - Also: file hygiene, large-file guard, private-key scan, `no-em-dash`, and
+    `pytest` at the **pre-push** stage. Plus `.gitattributes` for LF policy.
+- [x] 0.4 Central config with Pydantic Settings: airports list, bounding boxes, poll intervals, storage paths — all via env vars / `.env` (never hardcode).
+  - **Deviation:** split into two layers. Deployment settings live in `.env`
+    (`Settings`); domain reference data lives in committed `config/airports.toml`.
+    Bounding boxes are **derived** from coordinates rather than stored, so the
+    two can never disagree. See decision log 3 and 4 in `ARCHITECTURE.md`.
+- [x] 0.5 Secrets: `.env` locally (gitignored), GitHub Actions secrets for CI. Store OpenSky client id/secret here.
+  - `.env.example` committed as the template. GitHub Actions secrets land with CI (7.1).
 - [ ] 0.6 `docker-compose.yml` with placeholder services: `ingest`, `serving`, `mlflow`, `prefect`, `grafana`, `prometheus`.
+  - **Deferred by decision.** Standing up six empty containers before any code
+    needs them means debugging infrastructure with no payload. Each service
+    arrives in the commit that needs it. See decision log 1.
 - [ ] 0.7 Register an OpenSky account + create API client (client id/secret) — raises daily credit budget vs. anonymous.
+  - **Blocked on you.** Nothing has been run against the live API yet.
 
 **Definition of done:** `uv run pytest` passes (with one trivial test), `docker compose config` validates, pre-commit runs clean.
+
+**Actual status:** 131 tests pass, pre-commit runs clean. `docker compose config`
+is not applicable while 0.6 is deferred.
 
 ---
 
@@ -93,9 +107,23 @@
 **Outcome:** Raw data lands on disk continuously, append-only, partitioned by date, and survives API failures.
 
 ### 4.1 OpenSky client
-- [ ] 1.1 OAuth2 client-credentials flow: exchange id/secret for bearer token; auto-refresh (tokens expire ~30 min).
-- [ ] 1.2 `get_states(bbox)` — call `/states/all` with `lamin/lamax/lomin/lomax` per airport (e.g., ~60 nm box around each). Parse the positional array into a typed Pydantic model (`icao24, callsign, lon, lat, baro_alt, geo_alt, velocity, heading, vertical_rate, on_ground, ts`).
-- [ ] 1.3 Credit budgeting: track requests/day; poll every 60–120 s per bbox; back off on 429/5xx with exponential retry (tenacity).
+- [x] 1.1 OAuth2 client-credentials flow: exchange id/secret for bearer token; auto-refresh (tokens expire ~30 min).
+  - `ingest/opensky_auth.py`. Proactive refresh with a skew margin clamped to
+    half the token lifetime; monotonic clock so NTP corrections cannot revive an
+    expired token; one 401 retry for server-side revocation.
+- [x] 1.2 `get_states(bbox)` — call `/states/all` with `lamin/lamax/lomin/lomax` per airport (e.g., ~60 nm box around each). Parse the positional array into a typed Pydantic model (`icao24, callsign, lon, lat, baro_alt, geo_alt, velocity, heading, vertical_rate, on_ground, ts`).
+  - `ingest/opensky_client.py`. **Deviation:** units are in the field names
+    (`baro_altitude_m`, `velocity_ms`, `true_track_deg`) because OpenSky reports
+    SI while Phase 3 thresholds are in feet. See decision log 7.
+- [x] 1.3 Credit budgeting: track requests/day; poll every 60–120 s per bbox; back off on 429/5xx with exponential retry (tenacity).
+  - `ingest/credit_budget.py` (proactive gate, UTC-midnight reset, reconciled
+    against the server's `X-Rate-Limit-Remaining` header) and `ingest/retry.py`
+    (tenacity; only `retryable` errors, `Retry-After` honoured over our own
+    backoff, jittered, bounded attempts).
+  - The budget gate sits **inside** the retry loop, so every attempt is charged
+    and a retry storm cannot spend past the daily allowance.
+  - **Note:** the 60–120 s poll cadence itself is the poller loop, which lands
+    with 1.8–1.10. The 60 s floor is already enforced in `Settings`.
 
 ### 4.2 Weather client
 - [ ] 1.4 `get_metar(icao_ids)` — `https://aviationweather.gov/api/data/metar?ids=KJFK,KEWR&format=json`; poll every 10 min (METARs update hourly + SPECIs).
@@ -114,7 +142,14 @@
 
 ### 4.6 Tests
 - [ ] 1.11 Unit tests with recorded API fixtures (respx/vcr-style) — no live calls in CI.
-- [ ] 1.12 Contract test: parsing fails loudly (not silently) if OpenSky changes array shape.
+  - **OpenSky done; METAR and FAA pending** (those clients do not exist yet).
+    Uses `httpx.MockTransport` rather than respx: it is built into httpx, so no
+    extra dependency. Clocks and HTTP clients are injected, so no test sleeps or
+    touches the network.
+- [x] 1.12 Contract test: parsing fails loudly (not silently) if OpenSky changes array shape.
+  - The positional layout lives in one place (`_STATE_FIELDS`). A strict
+    `icao24` pattern catches index drift; short arrays are rejected while
+    appended fields are tolerated. See `tests/test_opensky_client.py`.
 
 **Definition of done:** Run ingest for 1 hour locally → bronze Parquet exists for all 3 sources; killing/restarting the service loses no more than one poll cycle.
 
@@ -279,7 +314,10 @@ Timebox suggestion: M1–M2 first week; M3 is the most iterative (budget real tu
 
 ## 14. Risks & Gotchas Checklist
 
-- [ ] OpenSky credit exhaustion → keep bboxes tight, poll ≥ 60 s, monitor credit metric (8.1).
+- [x] OpenSky credit exhaustion → keep bboxes tight, poll ≥ 60 s, monitor credit metric (8.1).
+  - Mitigated in 1.3: proactive daily budget gate, 60 s poll floor enforced at
+    config validation, server credit header reconciled on every response,
+    low-water warning. The Prometheus metric itself still lands with 8.1.
 - [ ] Label lag (BTS ~2 months) → accept in v1; plan data-accumulation period (4.3).
 - [ ] ADS-B coverage gaps at low altitude → some landings/go-arounds will be missed; measure detector coverage, don't assume completeness.
 - [ ] Non-commercial terms: OpenSky free tier is for research/non-commercial use — fine for this project, revisit before any commercial use.

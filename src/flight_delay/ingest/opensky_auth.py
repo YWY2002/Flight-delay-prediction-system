@@ -22,6 +22,7 @@ import time
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from types import TracebackType
+from typing import ClassVar
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -48,8 +49,30 @@ class OpenSkyAuthError(RuntimeError):
 
     Deliberately distinct from httpx's exceptions so callers can tell "your
     credentials are wrong" (never retry, a human must fix it) apart from "the
-    network hiccuped" (retry with backoff, task 1.3).
+    network hiccuped" (retry with backoff).
+
+    `retryable` is the single flag the retry policy reads. It lives on the
+    exception rather than in a list of types kept somewhere else, because a list
+    maintained at a distance from the raise site inevitably falls out of sync,
+    and the failure mode is silent: either a transient error stops being
+    retried, or bad credentials get hammered in a loop until access is
+    suspended.
+
+    Default is False. New error types are non-retryable until someone
+    deliberately says otherwise, which is the safe direction to be wrong in.
     """
+
+    retryable: ClassVar[bool] = False
+
+
+class OpenSkyAuthUnavailableError(OpenSkyAuthError):
+    """The token endpoint could not be reached, or it failed with a 5xx.
+
+    Nothing is known to be wrong with the credentials, so this is worth
+    retrying: DNS blips, TLS resets, and auth-server restarts all land here.
+    """
+
+    retryable: ClassVar[bool] = True
 
 
 class _TokenResponse(BaseModel):
@@ -186,9 +209,11 @@ class OpenSkyTokenProvider:
                 headers={"Accept": "application/json"},
             )
         except httpx.HTTPError as exc:
-            # Transport-level failure (DNS, TLS, timeout). Transient, so this is
-            # the case worth retrying in task 1.3.
-            raise OpenSkyAuthError(f"Could not reach the OpenSky token endpoint: {exc}") from exc
+            # Transport-level failure (DNS, TLS, timeout): nothing suggests the
+            # credentials are wrong, so this is worth retrying.
+            raise OpenSkyAuthUnavailableError(
+                f"Could not reach the OpenSky token endpoint: {exc}"
+            ) from exc
 
         # 4xx here means the credentials themselves are bad. Retrying cannot
         # help, so say exactly which variables to fix rather than emitting a
@@ -199,6 +224,11 @@ class OpenSkyTokenProvider:
                 "Check FDP_OPENSKY_CLIENT_ID and FDP_OPENSKY_CLIENT_SECRET in your .env. "
                 "Create or reset a client at https://opensky-network.org under "
                 "Account -> API Client."
+            )
+        # 5xx is the auth server having a bad day, not us. Retryable.
+        if response.status_code >= 500:
+            raise OpenSkyAuthUnavailableError(
+                f"OpenSky token endpoint returned HTTP {response.status_code}."
             )
         if response.status_code >= 400:
             raise OpenSkyAuthError(f"OpenSky token endpoint returned HTTP {response.status_code}.")

@@ -116,6 +116,37 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ---- Credit budget -----------------------------------------------------
+    opensky_daily_credits: int = Field(
+        default=4000,
+        gt=0,
+        description=(
+            "Daily OpenSky credit allowance. Roughly 400 anonymous, 4000 registered, "
+            "8000 for ADS-B feeders. Set this to your actual tier: too high and the "
+            "budget gate never fires, too low and we throttle ourselves needlessly."
+        ),
+    )
+
+    # ---- Retry / backoff ---------------------------------------------------
+    opensky_max_retry_attempts: int = Field(
+        default=4,
+        ge=1,
+        description=(
+            "Total attempts including the first. Bounded so a persistent outage "
+            "surfaces as a failed poll cycle rather than a task wedged forever."
+        ),
+    )
+    opensky_initial_backoff_seconds: float = Field(
+        default=1.0,
+        gt=0.0,
+        description="First retry delay; doubles with jitter thereafter.",
+    )
+    opensky_max_backoff_seconds: float = Field(
+        default=60.0,
+        gt=0.0,
+        description="Ceiling on any single backoff, including a server Retry-After.",
+    )
+
     # ---- Storage -----------------------------------------------------------
     data_dir: Path = Field(
         default=PROJECT_ROOT / "data",

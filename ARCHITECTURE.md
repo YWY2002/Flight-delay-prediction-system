@@ -218,6 +218,8 @@ flowchart TD
 | [`common/airports.py`](src/flight_delay/common/airports.py) | `Airport`, `BoundingBox`, reference loading, bbox derivation |
 | [`ingest/opensky_auth.py`](src/flight_delay/ingest/opensky_auth.py) | OAuth2 client credentials, token caching and refresh |
 | [`ingest/opensky_client.py`](src/flight_delay/ingest/opensky_client.py) | `/states/all` calls, positional array parsing |
+| [`ingest/credit_budget.py`](src/flight_delay/ingest/credit_budget.py) | Daily credit accounting and the proactive spend gate |
+| [`ingest/retry.py`](src/flight_delay/ingest/retry.py) | Backoff policy for transient failures |
 
 ---
 
@@ -366,16 +368,75 @@ and an off-by-one-hour join yields a model that looks fine and is wrong.
 
 ### Error taxonomy drives retry behaviour
 
+Every ingestion error carries a `retryable` class flag. The retry policy reads
+only that flag, so the decision lives at the raise site where the cause is
+actually known. A list of retryable types maintained elsewhere drifts out of
+sync silently, and it fails in both directions: transient errors stop being
+retried, or bad credentials get hammered until access is suspended.
+
 ```mermaid
 flowchart TD
-    E["Ingestion failure"] --> Q{"Retryable?"}
-    Q -->|"No: credentials wrong"| A["OpenSkyAuthError<br/>from 4xx on token endpoint<br/>Human must fix. Message names<br/>the env vars to change."]
-    Q -->|"Yes: transport"| B["OpenSkyAuthError / OpenSkyApiError<br/>from timeout, DNS, TLS, 5xx<br/>Retry with backoff."]
-    Q -->|"Yes, but back off hard"| C["OpenSkyRateLimitError<br/>from 429, carries retry_after<br/>Stop polling for a while."]
+    E["Ingestion failure"] --> Q{"retryable?"}
+
+    Q -->|"False"| P["Permanent"]
+    Q -->|"True"| T["Transient"]
+
+    P --> P1["OpenSkyAuthError<br/>4xx from token endpoint"]
+    P --> P2["OpenSkyApiError<br/>401/403 after refresh,<br/>malformed body, bad request"]
+    P --> P3["CreditBudgetExhausted<br/>we chose not to call"]
+
+    T --> T1["OpenSkyTransportError<br/>DNS, TLS, timeout"]
+    T --> T2["OpenSkyServerError<br/>5xx"]
+    T --> T3["OpenSkyRateLimitError<br/>429, carries retry_after"]
+    T --> T4["OpenSkyAuthUnavailableError<br/>token endpoint unreachable"]
+
+    P1 --> STOP["Raise immediately.<br/>A human must act."]
+    P2 --> STOP
+    P3 --> STOP
+    T1 --> BACK["Exponential backoff<br/>with jitter, bounded attempts"]
+    T2 --> BACK
+    T4 --> BACK
+    T3 --> RA["Honour Retry-After,<br/>capped by the ceiling"]
 ```
 
-The distinction is not cosmetic. Retrying bad credentials in a loop is how API
-access gets suspended.
+Default is non-retryable. A new error type is safe until someone deliberately
+opts it in, which is the right direction to be wrong in.
+
+### Budget and retry are separate mechanisms
+
+Credit budgeting is **proactive**: refuse a request we cannot afford.
+Retry is **reactive**: respond to a failure that already happened. Conflating
+them produces a client that retries its way through a budget it already spent.
+
+```mermaid
+flowchart TD
+    A["get_states(bbox)"] --> B{"retry loop"}
+    B --> C["budget.consume(1)"]
+    C -->|"exhausted"| X["CreditBudgetExhausted<br/>no network call made"]
+    C -->|"ok"| D["HTTP GET /states/all"]
+    D --> E{"outcome"}
+    E -->|"permanent error"| Y["raise"]
+    E -->|"transient error"| B
+    E -->|"200"| F["parse + validate"]
+    F --> G["budget.reconcile(header)"]
+    G --> H["StatesResponse"]
+```
+
+Two ordering decisions in that diagram:
+
+- **The budget gate is inside the retry loop**, so every attempt is charged. A
+  retried request costs the same as a fresh one; charging only the logical call
+  would let a retry storm spend several times its share of the budget that
+  exists to prevent exactly that.
+- **The server's header wins over local counting.** Local counting gates the
+  first request (no response has arrived yet) but drifts across restarts and
+  across processes sharing one account. `X-Rate-Limit-Remaining` is
+  authoritative and corrects the counter after every success.
+
+The budget resets on the **wall clock** at UTC midnight, deliberately unlike
+token expiry which uses the monotonic clock. "Has the calendar date changed" and
+"how much time has elapsed" are different questions, and a monotonic counter
+cannot answer the first one at all.
 
 ### Secrets
 
@@ -433,7 +494,7 @@ the actual gate**, which is why it runs the same checks.
 | Airport reference data, bbox derivation | **Built** | `common/airports.py`, `config/airports.toml` |
 | OpenSky OAuth2 and auto-refresh | **Built** | `ingest/opensky_auth.py` |
 | OpenSky `/states/all` and typed parsing | **Built** | `ingest/opensky_client.py` |
-| Credit budgeting, retry, backoff | Planned (1.3) | |
+| Credit budgeting, retry, backoff | **Built** | `ingest/credit_budget.py`, `ingest/retry.py` |
 | METAR / TAF client | Planned (1.4, 1.5) | |
 | FAA NAS status client | Planned (1.6) | |
 | Aircraft metadata | Planned (1.7) | |
@@ -447,7 +508,7 @@ the actual gate**, which is why it runs the same checks.
 | Prometheus, Grafana, Evidently | Planned (Phase 8) | |
 | Docker Compose | Deferred by decision, returns with the first service to containerise | |
 
-**Test suite:** 82 tests, no network, runs in under two seconds.
+**Test suite:** 131 tests, no network, no sleeping, runs in under three seconds.
 
 **Not yet verified against the live API.** Everything above is tested against
 mocks built from documented behaviour. The first real call is where endpoint
@@ -475,6 +536,12 @@ Recorded so the reasoning survives.
 | 10 | Line endings handled by `.gitattributes`, not the linter | The hook and `core.autocrlf` were actively undoing each other. Line endings are git's concern. |
 | 11 | No committed `requirements.txt` | A derived artifact that nothing regenerates goes stale and eventually installs wrong versions. Generate on demand. |
 | 12 | Tolerate longer state arrays, reject shorter ones | Appended optional fields are normal upstream behaviour; refusing them is self-inflicted downtime. Short arrays are unambiguously broken. |
+| 13 | `retryable` flag on the exception class, not a list of types in the retry policy | A list maintained away from the raise site drifts, and fails silently in both directions. Default False so new errors are safe until deliberately opted in. |
+| 14 | Budget gate inside the retry loop, charging every attempt | Charging only the logical call lets a retry storm overspend the budget that exists to prevent it. |
+| 15 | Server `X-Rate-Limit-Remaining` overrides local counting | Local counting cannot see other processes on the same account, and resets on restart. The server knows the truth. |
+| 16 | Budget uses the wall clock, token expiry uses monotonic | Different questions. Date rollover is inherently wall-clock; elapsed duration must survive NTP corrections. |
+| 17 | Cap `Retry-After` rather than obeying it unbounded | An absurd value would park the poller for hours. Better to fail the cycle and let the scheduler return on its own cadence. |
+| 18 | Budget and retry enabled by default in `client_from_settings` | Opt-in safety means the safe configuration is the one you have to remember, and the live API is where forgetting is expensive. |
 
 ---
 
@@ -482,7 +549,7 @@ Recorded so the reasoning survives.
 
 | Risk | Mitigation |
 |---|---|
-| OpenSky credit exhaustion | Tight bounding boxes, 60 second poll floor enforced in config, credits header captured for budgeting in task 1.3 |
+| OpenSky credit exhaustion | **Mitigated.** Proactive daily budget gate, 60 second poll floor enforced at config validation, server credit header reconciled on every response, latched low-water warning. Prometheus metric still to come in 8.1 |
 | Label lag: BTS publishes ~2 months late | Accepted for v1. Start ingesting immediately; bootstrap the first model on weather and BTS-derivable features only |
 | ADS-B coverage gaps at low altitude | Some landings and go-arounds will be missed. Measure detector coverage rather than assuming completeness |
 | Silent upstream schema change | Strict boundary validation and contract tests. `icao24` pattern catches index drift |
