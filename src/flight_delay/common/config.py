@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     )
 
     # ---- HTTP --------------------------------------------------------------
+    opensky_base_url: str = Field(
+        default="https://opensky-network.org/api",
+        description="OpenSky REST API root.",
+    )
     opensky_token_url: str = Field(
         default=(
             "https://auth.opensky-network.org/auth/realms/opensky-network"

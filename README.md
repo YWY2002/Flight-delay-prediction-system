@@ -4,11 +4,18 @@ Live flight + weather ingestion, approach-anomaly detection (go-arounds, holds),
 and airport-level delay-cascade prediction - built as a production-shaped ML
 pipeline, not a notebook.
 
-See [flight-delay-pipeline-plan.md](flight-delay-pipeline-plan.md) for the full design.
+- [ARCHITECTURE.md](ARCHITECTURE.md) - components, data flow, conventions, and
+  the decision log. Start here to understand how the system fits together.
+- [flight-delay-pipeline-plan.md](flight-delay-pipeline-plan.md) - the
+  task-by-task implementation plan.
 
 ## Status
 
-Phase 0 - project scaffolding. Skeleton installs and tests pass.
+Phase 1 - ingestion. OpenSky auth and `/states/all` are built and tested against
+mocks; nothing has been run against the live API yet (blocked on plan task 0.7,
+registering an OpenSky API client). See
+[implementation status](ARCHITECTURE.md#11-implementation-status) for the full
+inventory.
 
 ## Quickstart
 
