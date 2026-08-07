@@ -220,6 +220,9 @@ flowchart TD
 | [`ingest/opensky_client.py`](src/flight_delay/ingest/opensky_client.py) | `/states/all` calls, positional array parsing |
 | [`ingest/credit_budget.py`](src/flight_delay/ingest/credit_budget.py) | Daily credit accounting and the proactive spend gate |
 | [`ingest/retry.py`](src/flight_delay/ingest/retry.py) | Backoff policy for transient failures |
+| [`ingest/bronze.py`](src/flight_delay/ingest/bronze.py) | Append-only partitioned Parquet writer, content hashing |
+| [`ingest/opensky_poller.py`](src/flight_delay/ingest/opensky_poller.py) | Poll loop, bronze schema, one structured log line per poll |
+| [`common/logging_config.py`](src/flight_delay/common/logging_config.py) | structlog setup, stdlib logging routed through it |
 
 ---
 
@@ -498,7 +501,8 @@ the actual gate**, which is why it runs the same checks.
 | METAR / TAF client | Planned (1.4, 1.5) | |
 | FAA NAS status client | Planned (1.6) | |
 | Aircraft metadata | Planned (1.7) | |
-| Bronze Parquet writer, structured logging | Planned (1.8 to 1.10) | |
+| Bronze Parquet writer, content hashing | **Built** | `ingest/bronze.py` |
+| Poll loop + structured logging | **Built** | `ingest/opensky_poller.py`, `common/logging_config.py` |
 | Silver layer, schemas, flight segments | Planned (Phase 2) | |
 | Go-around and hold detectors, gold features | Planned (Phase 3) | |
 | BTS labels, training, MLflow gate | Planned (Phase 4) | |
@@ -508,7 +512,10 @@ the actual gate**, which is why it runs the same checks.
 | Prometheus, Grafana, Evidently | Planned (Phase 8) | |
 | Docker Compose | Deferred by decision, returns with the first service to containerise | |
 
-**Test suite:** 131 tests, no network, no sleeping, runs in under three seconds.
+**Test suite:** 174 tests, no network, no sleeping, runs in about three seconds.
+
+**Runnable:** `uv run flight-delay-ingest` polls the configured airports and
+writes bronze Parquet. Credentials required (plan task 0.7).
 
 **Not yet verified against the live API.** Everything above is tested against
 mocks built from documented behaviour. The first real call is where endpoint
@@ -542,6 +549,13 @@ Recorded so the reasoning survives.
 | 16 | Budget uses the wall clock, token expiry uses monotonic | Different questions. Date rollover is inherently wall-clock; elapsed duration must survive NTP corrections. |
 | 17 | Cap `Retry-After` rather than obeying it unbounded | An absurd value would park the poller for hours. Better to fail the cycle and let the scheduler return on its own cadence. |
 | 18 | Budget and retry enabled by default in `client_from_settings` | Opt-in safety means the safe configuration is the one you have to remember, and the live API is where forgetting is expensive. |
+| 19 | Bronze partitioned by ingestion time, not event time | Ingestion time only moves forward, so writes never revisit a closed partition. Event time would scatter one poll across many directories and force rewrites on late data. Silver can re-partition. |
+| 20 | Atomic write via temp file plus `os.replace` | A kill mid-write would otherwise leave a truncated Parquet that breaks every later read of the partition. This is what makes the restart guarantee structural. |
+| 21 | Explicit pyarrow schema, never inferred | An all-null column infers a different type than a populated one, and the two files will not union. The damage appears at query time, weeks after the cause. |
+| 22 | Hash excludes `ingested_at` and `airport` | Including ingestion time makes every record unique and defeats dedup entirely. Including airport stops the overlapping KJFK/KEWR boxes from collapsing to one observation. |
+| 23 | blake2b-128 rather than SHA-256 for the content hash | Hash columns are high-cardinality, so dictionary encoding cannot compress them and the width is paid per row forever. 128 bits is ample at this volume. |
+| 24 | `tzdata` as an explicit dependency | Python's `zoneinfo` reads the system tz database, which Windows lacks and slim containers strip. Without it pyarrow cannot resolve even "UTC" and reading our own Parquet fails. |
+| 25 | Structured event names everywhere, not formatted prose | Operational questions about a poller are aggregations. `poll.completed` with fields is a filter; a sentence is a regex against text someone will reword. |
 
 ---
 

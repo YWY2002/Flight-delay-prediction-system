@@ -8,9 +8,21 @@ requires-python = ">=3.12"
 # We add a dep in the same commit as the code that imports it - never "just in case".
 dependencies = [
     "httpx>=0.28.1",
+    "pyarrow>=25.0.0",
     "pydantic-settings>=2.14.2",
+    "structlog>=26.1.0",
     "tenacity>=9.1.4",
+    # Not imported anywhere by us. Python's `zoneinfo` reads the SYSTEM timezone
+    # database, which Windows does not have and slim Linux containers usually
+    # strip. Without it pyarrow cannot resolve even "UTC" when converting
+    # timestamp columns back to Python, so reading our own Parquet fails. An
+    # explicit dependency beats a platform-dependent runtime crash.
+    "tzdata>=2026.3",
 ]
+
+[project.scripts]
+# Runnable entry point for the ingestion loop: `uv run flight-delay-ingest`
+flight-delay-ingest = "flight_delay.ingest.opensky_poller:main"
 
 [project.optional-dependencies]
 # (left for future runtime extras, e.g. serving-only or training-only installs)
@@ -48,6 +60,13 @@ python_version = "3.12"
 # a whole class of bugs before runtime. Dial back here if it gets noisy.
 strict = true
 files = ["src", "tests"]
+
+# pyarrow ships no py.typed marker, so mypy cannot see its types. Scoped to this
+# one library rather than relaxing the setting globally: everything we write
+# stays strictly checked.
+[[tool.mypy.overrides]]
+module = ["pyarrow.*"]
+ignore_missing_imports = true
 
 # ---- Tests ----
 [tool.pytest.ini_options]

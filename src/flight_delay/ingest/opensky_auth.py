@@ -16,7 +16,6 @@ transport, with no live network access anywhere in the suite.
 
 from __future__ import annotations
 
-import logging
 import threading
 import time
 from collections.abc import Callable, Generator
@@ -28,8 +27,9 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from flight_delay.common.config import Settings
+from flight_delay.common.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 DEFAULT_TOKEN_URL = (
     "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
@@ -256,9 +256,9 @@ class OpenSkyTokenProvider:
         # Log the lifetime, never the token. Credentials escape through logs and
         # tracebacks far more often than through commits.
         logger.info(
-            "Obtained OpenSky bearer token (expires_in=%ss, refreshing %.0fs early)",
-            payload.expires_in,
-            effective_skew,
+            "opensky.token_obtained",
+            expires_in_seconds=payload.expires_in,
+            refresh_skew_seconds=round(effective_skew, 1),
         )
         return _CachedToken(access_token=payload.access_token, expires_at=expires_at)
 
@@ -308,7 +308,7 @@ class OpenSkyAuth(httpx.Auth):
         # Exactly one retry, because the generator yields at most twice: a loop
         # here against genuinely bad credentials would hammer the auth endpoint.
         if response.status_code == 401:
-            logger.info("OpenSky returned 401; invalidating token and retrying once")
+            logger.info("opensky.token_rejected_retrying")
             self._provider.invalidate()
             request.headers["Authorization"] = f"Bearer {self._provider.get_token()}"
             yield request

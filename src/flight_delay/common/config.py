@@ -153,6 +153,16 @@ class Settings(BaseSettings):
         description="Root of the local data lake. Gitignored.",
     )
 
+    # ---- Logging -----------------------------------------------------------
+    log_level: str = Field(default="INFO", description="Root log level.")
+    log_json: bool = Field(
+        default=False,
+        description=(
+            "JSON logs for containers and log shippers; human-readable console "
+            "output for local development. Content is identical either way."
+        ),
+    )
+
     # ---- Secrets -----------------------------------------------------------
     # Optional so the app imports, tests run, and CI passes without credentials.
     # Code that actually needs them calls require_opensky_credentials(), which

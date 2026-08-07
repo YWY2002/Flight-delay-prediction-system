@@ -136,9 +136,25 @@ is not applicable while 0.6 is deferred.
 - [ ] 1.7 One-off script: download OpenSky aircraft database CSV → keep `icao24, typecode, model, built, operator`; derive `aircraft_age = current_year − built`. Store as a reference Parquet. Add a monthly refresh task.
 
 ### 4.5 Raw storage (bronze layer)
-- [ ] 1.8 Writer: append Parquet files partitioned as `data/bronze/{source}/date=YYYY-MM-DD/hour=HH/*.parquet`.
-- [ ] 1.9 Every record carries `ingested_at` and raw payload hash for dedup.
-- [ ] 1.10 Structured logging (structlog): one log line per poll with counts, latency, credit estimate.
+- [x] 1.8 Writer: append Parquet files partitioned as `data/bronze/{source}/date=YYYY-MM-DD/hour=HH/*.parquet`.
+  - `ingest/bronze.py`. Append-only, atomic (temp file plus `os.replace`, so a
+    kill mid-write cannot leave a truncated Parquet), explicit pinned pyarrow
+    schema, zstd, empty batches write nothing.
+  - **Partitioned by ingestion time, not event time.** Ingestion time only moves
+    forward, so writes never revisit a closed partition. Silver may re-partition
+    by event time. See decision log 19.
+- [x] 1.9 Every record carries `ingested_at` and raw payload hash for dedup.
+  - blake2b-128 over canonical JSON of the observation. `ingested_at` and
+    `airport` are deliberately **excluded** from the hash: the first differs on
+    every write, and the second would stop the overlapping KJFK/KEWR boxes from
+    collapsing to one observation. Both are still stored as columns.
+  - Also carries `poll_id`, so rows and log lines correlate to one sweep.
+- [x] 1.10 Structured logging (structlog): one log line per poll with counts, latency, credit estimate.
+  - `common/logging_config.py`. JSON or console rendering from one processor
+    chain; stdlib logging routed through the same formatter. All ingest modules
+    emit event names with fields (`poll.completed`, `credits.running_low`)
+    rather than formatted prose.
+  - Runnable entry point: `uv run flight-delay-ingest`.
 
 ### 4.6 Tests
 - [ ] 1.11 Unit tests with recorded API fixtures (respx/vcr-style) — no live calls in CI.
@@ -152,6 +168,13 @@ is not applicable while 0.6 is deferred.
     appended fields are tolerated. See `tests/test_opensky_client.py`.
 
 **Definition of done:** Run ingest for 1 hour locally → bronze Parquet exists for all 3 sources; killing/restarting the service loses no more than one poll cycle.
+
+**Actual status:** the OpenSky path is complete and runnable (`uv run
+flight-delay-ingest`). Atomic writes make the restart guarantee structural
+rather than hopeful: an interrupted write leaves no file at all, so at most the
+in-flight poll is lost. Still outstanding for this DoD: the METAR/TAF and FAA
+sources (1.4 to 1.6), and an actual one-hour run against the live API, which is
+blocked on 0.7.
 
 ---
 

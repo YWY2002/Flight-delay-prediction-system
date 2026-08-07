@@ -19,14 +19,15 @@ question and cannot be answered by a monotonic counter at all.
 
 from __future__ import annotations
 
-import logging
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import ClassVar
 
-logger = logging.getLogger(__name__)
+from flight_delay.common.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def _utc_now() -> datetime:
@@ -104,10 +105,11 @@ class CreditBudget:
         today = self._clock().date()
         if today != self._day:
             logger.info(
-                "Credit budget reset for %s (previous day used %d/%d)",
-                today,
-                self._used,
-                self._daily_limit,
+                "credits.day_rolled",
+                day=str(today),
+                previous_day=str(self._day),
+                previous_used=self._used,
+                limit=self._daily_limit,
             )
             self._day = today
             self._used = 0
@@ -121,12 +123,11 @@ class CreditBudget:
             # the rest of the day.
             self._warned_low = True
             logger.warning(
-                "OpenSky credits running low: %d of %d remaining for %s. "
-                "Consider raising FDP_OPENSKY_POLL_SECONDS or shrinking "
-                "FDP_BBOX_RADIUS_NM.",
-                remaining,
-                self._daily_limit,
-                self._day,
+                "credits.running_low",
+                remaining=remaining,
+                limit=self._daily_limit,
+                day=str(self._day),
+                hint=("Consider raising FDP_OPENSKY_POLL_SECONDS or shrinking FDP_BBOX_RADIUS_NM."),
             )
 
     # ---- public API --------------------------------------------------------
@@ -198,10 +199,10 @@ class CreditBudget:
                 # but worth surfacing, since it means we are throttling
                 # ourselves unnecessarily.
                 logger.warning(
-                    "Server reports %d credits remaining, above the configured limit of %d. "
-                    "Consider raising FDP_OPENSKY_DAILY_CREDITS.",
-                    server_remaining,
-                    self._daily_limit,
+                    "credits.limit_understated",
+                    server_remaining=server_remaining,
+                    configured_limit=self._daily_limit,
+                    hint="Consider raising FDP_OPENSKY_DAILY_CREDITS.",
                 )
 
             self._used = max(0, self._daily_limit - server_remaining)

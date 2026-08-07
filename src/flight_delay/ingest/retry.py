@@ -16,7 +16,6 @@ itself:
 
 from __future__ import annotations
 
-import logging
 import time
 from collections.abc import Callable
 
@@ -28,7 +27,9 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-logger = logging.getLogger(__name__)
+from flight_delay.common.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 DEFAULT_MAX_ATTEMPTS = 4
 DEFAULT_INITIAL_BACKOFF_SECONDS = 1.0
@@ -94,18 +95,19 @@ def build_retrying(
                 # and let the scheduler come back on its own cadence.
                 delay = min(server_hint, max_backoff_seconds)
                 logger.info(
-                    "Honouring Retry-After: waiting %.1fs before attempt %d",
-                    delay,
-                    retry_state.attempt_number + 1,
+                    "retry.honouring_retry_after",
+                    delay_seconds=round(delay, 2),
+                    next_attempt=retry_state.attempt_number + 1,
+                    server_hint_seconds=server_hint,
                 )
                 return delay
 
         delay = float(exponential(retry_state))
         logger.info(
-            "Transient failure (%s); waiting %.1fs before attempt %d",
-            type(exc).__name__ if exc is not None else "unknown",
-            delay,
-            retry_state.attempt_number + 1,
+            "retry.backing_off",
+            error_type=type(exc).__name__ if exc is not None else "unknown",
+            delay_seconds=round(delay, 2),
+            next_attempt=retry_state.attempt_number + 1,
         )
         return delay
 

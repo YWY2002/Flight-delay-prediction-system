@@ -18,7 +18,6 @@ and validated hard enough that a shape change fails loudly instead of quietly
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Annotated, Any, ClassVar
@@ -36,6 +35,7 @@ from tenacity import Retrying
 
 from flight_delay.common.airports import BoundingBox
 from flight_delay.common.config import Settings
+from flight_delay.common.logging_config import get_logger
 from flight_delay.ingest.credit_budget import CreditBudget
 from flight_delay.ingest.opensky_auth import (
     OpenSkyAuth,
@@ -44,7 +44,7 @@ from flight_delay.ingest.opensky_auth import (
 )
 from flight_delay.ingest.retry import build_retrying, call_with_retry
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 DEFAULT_BASE_URL = "https://opensky-network.org/api"
 
@@ -342,14 +342,14 @@ class OpenSkyClient:
         # restarts and across processes sharing one account.
         if credits_remaining is not None and self._budget is not None:
             self._budget.reconcile(credits_remaining)
-        logger.info(
-            "opensky states fetched: bbox=(%.3f,%.3f,%.3f,%.3f) aircraft=%d credits_remaining=%s",
-            bbox.lamin,
-            bbox.lamax,
-            bbox.lomin,
-            bbox.lomax,
-            len(payload.states),
-            credits_remaining,
+        logger.debug(
+            "opensky.states_fetched",
+            aircraft=len(payload.states),
+            credits_remaining=credits_remaining,
+            lamin=bbox.lamin,
+            lamax=bbox.lamax,
+            lomin=bbox.lomin,
+            lomax=bbox.lomax,
         )
         return payload.model_copy(update={"credits_remaining": credits_remaining})
 
@@ -389,7 +389,7 @@ def _parse_credits(headers: httpx.Headers) -> int | None:
         return int(raw)
     except ValueError:
         # An unparseable budget header is not worth failing a good response for.
-        logger.warning("Could not parse %s header: %r", _CREDITS_HEADER, raw)
+        logger.warning("opensky.unparseable_credits_header", header=_CREDITS_HEADER, value=raw)
         return None
 
 

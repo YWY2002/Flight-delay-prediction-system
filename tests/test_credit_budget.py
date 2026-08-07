@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from structlog.testing import capture_logs
 
 from flight_delay.ingest.credit_budget import CreditBudget, CreditBudgetExhausted
 
@@ -217,29 +218,59 @@ def test_reconcile_respects_day_rollover() -> None:
 # ---- Low-water warning -----------------------------------------------------
 
 
-def test_low_water_warning_fires_once(caplog: pytest.LogCaptureFixture) -> None:
+def test_low_water_warning_fires_once() -> None:
     """Latched on purpose: a poller running every 90 s would otherwise emit this
     hundreds of times a day and train everyone to ignore it."""
     budget = CreditBudget(100, clock=FakeClock(), low_water_fraction=0.1)
     budget.consume(89)
 
-    with caplog.at_level("WARNING"):
+    with capture_logs() as logs:
         budget.consume(1)  # 10 remaining, at the threshold
         budget.consume(1)
         budget.consume(1)
 
-    warnings = [r for r in caplog.records if "credits running low" in r.message]
+    warnings = [e for e in logs if e["event"] == "credits.running_low"]
     assert len(warnings) == 1
 
 
-def test_low_water_warning_resets_after_rollover(caplog: pytest.LogCaptureFixture) -> None:
+def test_low_water_warning_carries_structured_fields() -> None:
+    """The payoff of structured logging: the numbers are fields, so "when did
+    credits start dropping" is a filter rather than a regex against prose."""
+    budget = CreditBudget(100, clock=FakeClock(), low_water_fraction=0.1)
+    budget.consume(89)
+
+    with capture_logs() as logs:
+        budget.consume(1)
+
+    warning = next(e for e in logs if e["event"] == "credits.running_low")
+    assert warning["remaining"] == 10
+    assert warning["limit"] == 100
+    assert warning["log_level"] == "warning"
+
+
+def test_low_water_warning_resets_after_rollover() -> None:
     clock = FakeClock(datetime(2026, 8, 7, 23, 0, tzinfo=UTC))
     budget = CreditBudget(10, clock=clock, low_water_fraction=0.5)
     budget.consume(6)
 
     clock.advance(hours=2)
 
-    with caplog.at_level("WARNING"):
+    with capture_logs() as logs:
         budget.consume(6)
 
-    assert any("credits running low" in r.message for r in caplog.records)
+    assert any(e["event"] == "credits.running_low" for e in logs)
+
+
+def test_day_rollover_is_logged() -> None:
+    clock = FakeClock(datetime(2026, 8, 7, 23, 59, tzinfo=UTC))
+    budget = CreditBudget(100, clock=clock)
+    budget.consume(40)
+
+    clock.advance(minutes=2)
+
+    with capture_logs() as logs:
+        budget.remaining()
+
+    rolled = next(e for e in logs if e["event"] == "credits.day_rolled")
+    assert rolled["previous_used"] == 40
+    assert rolled["day"] == "2026-08-08"
