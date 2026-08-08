@@ -5,7 +5,7 @@ How this system is put together, and why it is put together that way.
 > **Read this first:** this document describes both the **target** architecture
 > and what is **actually built today**. The two are clearly marked throughout.
 > Sections describing unbuilt components are labelled `PLANNED`. Do not mistake
-> the diagrams for reality: see [Implementation status](#implementation-status)
+> the diagrams for reality: see [Implementation status](#12-implementation-status)
 > for the honest inventory.
 >
 > Task-level detail lives in
@@ -14,7 +14,117 @@ How this system is put together, and why it is put together that way.
 
 ---
 
-## 1. What the system does
+## 1. Tech stack
+
+Everything the project uses, why that choice over the obvious alternative, and
+whether it is in the repo today. Versions are the ones pinned in `uv.lock`,
+which is the single source of version truth: hooks and CI both resolve through
+it, so there is no second place for a version to drift.
+
+### 1.1 Language and tooling
+
+| Concern | Choice | Version | Why this one |
+|---|---|---|---|
+| Language | **Python** | 3.12+ | The ML ecosystem. 3.12 for PEP 695 generics and stdlib `tomllib`. |
+| Packaging, envs, locking | **uv** | 0.11 | Replaces pip, pip-tools, virtualenv, and pyenv in one Rust binary. Fast enough that per-project envs stop being a chore. `uv.lock` pins the exact resolve. |
+| Build backend | **hatchling** | - | Minimal PEP 517 backend. No plugins needed for a src-layout package. |
+
+### 1.2 Runtime dependencies
+
+| Concern | Choice | Version | Why this one |
+|---|---|---|---|
+| Validation, schemas, settings | **Pydantic** + **pydantic-settings** | 2.13 / 2.14 | Parsing and validation at the boundary in one declaration. Settings get the same validation as data, so a bad `.env` fails at startup, not at 3am. |
+| HTTP client | **httpx** | 0.28 | Typed, explicit timeouts, and a pluggable `Auth`. Chosen over `requests` mainly for `MockTransport`, which removes the need for a separate mocking library. Used **synchronously**: 3 requests per 90 s is not a concurrency problem. |
+| Retry and backoff | **tenacity** | 9.1 | Declarative retry with jitter and custom wait strategies. Its `sleep` is injectable, so the backoff schedule is asserted without a test ever sleeping. |
+| Columnar storage | **pyarrow** | 25.0 | Writes the Parquet that is the data lake. Explicit schemas prevent the type drift that inferred schemas cause across files written weeks apart. |
+| Structured logging | **structlog** | 26.1 | Log lines become records with fields, not sentences. Operational questions about a poller are aggregations, and those are filters, not regexes. |
+| XML parsing | **defusedxml** | 0.7 | Only for the FAA feed. Stdlib `ElementTree` is documented as vulnerable to entity-expansion attacks, and that input is externally controlled. |
+| Timezone database | **tzdata** | 2026.3 | Never imported by us. Windows ships no system tz database and slim containers strip it, and without one pyarrow cannot resolve even `"UTC"` when reading our own Parquet back. |
+
+### 1.3 Standard library, used deliberately
+
+Worth listing because in several places the stdlib was chosen *over* a
+dependency, not for lack of one.
+
+| Module | Used for | Instead of |
+|---|---|---|
+| `tomllib` | Reading `config/airports.toml` | PyYAML. Stdlib since 3.11, so zero dependencies, and the format is already familiar from `pyproject.toml`. |
+| `hashlib.blake2b` | 128-bit content hash for deduplication | SHA-256. Hash columns are high-cardinality so Parquet cannot compress them; half the width is paid on every row forever. |
+| `threading` | Locks around token refresh and the credit budget; `Event` for shutdown | Prevents a thundering herd of token requests, and lets Ctrl-C interrupt a wait immediately. |
+| `time.monotonic` / `datetime` | Elapsed duration versus calendar date | Two different questions. See section 10. |
+| `csv`, `uuid`, `signal`, `dataclasses` | Aircraft CSV, poll ids, graceful shutdown, value objects | - |
+
+### 1.4 Quality tooling
+
+| Concern | Choice | Version | Why this one |
+|---|---|---|---|
+| Lint + format | **ruff** | 0.16 | Replaces flake8, isort, black, pyupgrade, and bugbear with one tool. `ruff format` for formatting, `ruff check` for lint. |
+| Type checking | **mypy** | 2.3 | Run in `strict` mode. Types catch the "this was a string when I thought it was a datetime" class of bug that ML pipelines hide longest, because a wrong number still looks like an answer. |
+| Tests | **pytest** | 9.1 | 261 tests, no network, no sleeping, ~3.5 s. |
+| Git hooks | **pre-commit** | 4.6 | pre-commit stage for hygiene and static checks, pre-push for pytest. Tools invoked via `uv run` so `uv.lock` stays the only version source. |
+| Type stubs | **types-defusedxml** | - | defusedxml ships no inline types. |
+
+### 1.5 Storage and data formats
+
+| Layer | Format | Notes |
+|---|---|---|
+| bronze, silver, gold | **Parquet**, zstd-compressed | Hive-partitioned `date=/hour=`, so DuckDB reads the tree with `hive_partitioning=true` and recovers the partition keys as columns. |
+| Query engine | **DuckDB** `PLANNED` | Phase 2. SQL over the Parquet tree, no server to operate. |
+| Reference data | **TOML** (committed), **Parquet** (generated) | `config/airports.toml` is code-reviewed domain data; `data/reference/aircraft.parquet` is a generated lookup table. |
+| Config and secrets | **`.env`** via pydantic-settings | Gitignored; `.env.example` is the committed template. |
+
+### 1.6 External services
+
+| Service | Auth | Format | Status |
+|---|---|---|---|
+| **OpenSky Network** `/states/all` | OAuth2 client credentials (Keycloak) | JSON, positional arrays | Verified live |
+| **NOAA aviationweather.gov** METAR/TAF | None | JSON | Verified live |
+| **FAA NAS Status** | None | XML | Closures verified live; ground stops and GDPs still unverified |
+| **OpenSky aircraft database** | None | CSV snapshot | Not yet downloaded |
+| **BTS On-Time Performance** | None | Monthly CSV | `PLANNED`, Phase 4 |
+
+### 1.7 Planned, not yet in the repo
+
+Listed so the target is visible, but none of this is installed. Each arrives in
+the commit that needs it, per the just-in-time principle in section 3.
+
+| Concern | Choice | Phase |
+|---|---|---|
+| SQL over Parquet | **DuckDB** | 2 |
+| Batch processing of BTS history | **Apache Spark** (PySpark) | 4 |
+| Dataframe validation | **pandera** | 2 |
+| Gradient boosting | **LightGBM** | 4 |
+| Experiment tracking, model registry | **MLflow** | 4 |
+| Model serving | **FastAPI** + **uvicorn** | 5 |
+| Orchestration | **Prefect** | 6 |
+| Containers | **Docker** + **Compose** | 5 onward |
+| CI/CD | **GitHub Actions** | 7 |
+| Metrics, dashboards | **prometheus-client**, **Grafana** | 8 |
+| Drift detection | **Evidently** | 8 |
+
+**Two query engines, deliberately.** DuckDB for the pipeline, Spark confined to
+the Phase 4 BTS label build. That is not an accident of drift, and the reason it
+is not "just use one" is written down in decision log 35: the live path is far
+too small for Spark, while Spark experience is an explicit learning goal for this
+project. Confining it to one offline batch job gets the experience without
+slowing the dev loop or the test suite.
+
+Spark also needs a JVM (Java 17+ for Spark 4.x), and on Windows it needs Hadoop's
+`winutils.exe` and `hadoop.dll` on a `HADOOP_HOME` path. Budget setup time for
+that; it is a known rite of passage, not a sign anything is broken.
+
+### 1.8 Entry points
+
+| Command | Does |
+|---|---|
+| `uv run flight-delay-ingest` | Runs the multi-source poller (OpenSky, METAR, TAF, FAA) on per-source cadences |
+| `uv run flight-delay-aircraft-db` | Downloads and rebuilds the aircraft reference table |
+| `uv run pytest` | Full suite |
+| `uv run pre-commit run --all-files` | Every hook against the whole repo |
+
+---
+
+## 2. What the system does
 
 Ingest live flight positions and weather, detect anomalous approach patterns
 (go-arounds, extended holds), and predict near-term airport delay state.
@@ -26,7 +136,7 @@ recover from the API it depends on going down at 3am.
 
 ---
 
-## 2. Design principles
+## 3. Design principles
 
 These are the rules that decide arguments. They are listed first because most of
 the specific choices later in this document follow from them.
@@ -39,11 +149,11 @@ the specific choices later in this document follow from them.
 | **Derive, do not duplicate** | Bounding boxes are computed from airport coordinates. Two stored copies of the same fact will eventually disagree. |
 | **Just-in-time infrastructure** | A service arrives in the commit that needs it, not "up front". Standing up six empty containers on day one teaches nothing and debugs nothing. |
 | **Constraints belong as early as possible** | Config-time beats runtime; runtime beats "discovered in the morning". |
-| **No live network in tests** | Every external call is behind an injectable client. The suite runs offline, deterministically, in under two seconds. |
+| **No live network in tests** | Every external call is behind an injectable client. The suite runs offline and deterministically in a few seconds. Recorded real payloads sit alongside the mocks, because a mock only proves we handle the shape we believe in. |
 
 ---
 
-## 3. System overview `TARGET`
+## 4. System overview `TARGET`
 
 ```mermaid
 flowchart TB
@@ -107,7 +217,7 @@ MLflow, FastAPI, Docker Compose, GitHub Actions, Evidently, Prometheus/Grafana.
 
 ---
 
-## 4. Data sources and the constraint that shapes everything
+## 5. Data sources and the constraint that shapes everything
 
 | Need | Source | Notes |
 |---|---|---|
@@ -133,7 +243,7 @@ Three consequences that shape the design:
 
 ---
 
-## 5. Data architecture: the medallion layers
+## 6. Data architecture: the medallion layers
 
 ```mermaid
 flowchart LR
@@ -176,7 +286,7 @@ not touch feature code.
 
 ---
 
-## 6. Code structure
+## 7. Code structure
 
 ```
 src/flight_delay/
@@ -221,12 +331,17 @@ flowchart TD
 | [`ingest/credit_budget.py`](src/flight_delay/ingest/credit_budget.py) | Daily credit accounting and the proactive spend gate |
 | [`ingest/retry.py`](src/flight_delay/ingest/retry.py) | Backoff policy for transient failures |
 | [`ingest/bronze.py`](src/flight_delay/ingest/bronze.py) | Append-only partitioned Parquet writer, content hashing |
-| [`ingest/opensky_poller.py`](src/flight_delay/ingest/opensky_poller.py) | Poll loop, bronze schema, one structured log line per poll |
+| [`ingest/opensky_poller.py`](src/flight_delay/ingest/opensky_poller.py) | OpenSky poll function, bronze schema, row mapping |
+| [`ingest/weather_client.py`](src/flight_delay/ingest/weather_client.py) | METAR and TAF from aviationweather.gov |
+| [`ingest/faa_client.py`](src/flight_delay/ingest/faa_client.py) | FAA NAS status, XML parsing |
+| [`ingest/aircraft_metadata.py`](src/flight_delay/ingest/aircraft_metadata.py) | Aircraft reference table (not bronze) |
+| [`ingest/errors.py`](src/flight_delay/ingest/errors.py), [`ingest/http.py`](src/flight_delay/ingest/http.py) | Shared error taxonomy and status mapping |
+| [`ingest/poller.py`](src/flight_delay/ingest/poller.py) | Multi-source scheduler, per-source cadences, CLI |
 | [`common/logging_config.py`](src/flight_delay/common/logging_config.py) | structlog setup, stdlib logging routed through it |
 
 ---
 
-## 7. Configuration architecture
+## 8. Configuration architecture
 
 Configuration is split into two layers because two genuinely different kinds of
 data were being conflated.
@@ -274,7 +389,7 @@ pipeline that runs green while collecting nothing.
 
 ---
 
-## 8. The ingestion path `BUILT`
+## 9. The ingestion path `BUILT`
 
 ### 8.1 Authentication
 
@@ -351,7 +466,7 @@ self-inflicted downtime.
 
 ---
 
-## 9. Cross-cutting conventions
+## 10. Cross-cutting conventions
 
 These apply everywhere and exist to prevent specific, recurring classes of bug.
 
@@ -462,7 +577,7 @@ runs is not a gate.
 
 ---
 
-## 10. Quality gates
+## 11. Quality gates
 
 ```mermaid
 flowchart LR
@@ -486,7 +601,7 @@ the actual gate**, which is why it runs the same checks.
 
 ---
 
-## 11. Implementation status
+## 12. Implementation status
 
 | Component | Status | Location |
 |---|---|---|
@@ -498,9 +613,10 @@ the actual gate**, which is why it runs the same checks.
 | OpenSky OAuth2 and auto-refresh | **Built** | `ingest/opensky_auth.py` |
 | OpenSky `/states/all` and typed parsing | **Built** | `ingest/opensky_client.py` |
 | Credit budgeting, retry, backoff | **Built** | `ingest/credit_budget.py`, `ingest/retry.py` |
-| METAR / TAF client | Planned (1.4, 1.5) | |
-| FAA NAS status client | Planned (1.6) | |
-| Aircraft metadata | Planned (1.7) | |
+| METAR / TAF client | **Built** | `ingest/weather_client.py` |
+| FAA NAS status client | **Built** | `ingest/faa_client.py` |
+| Aircraft metadata | **Built** | `ingest/aircraft_metadata.py` |
+| Multi-source scheduler | **Built** | `ingest/poller.py` |
 | Bronze Parquet writer, content hashing | **Built** | `ingest/bronze.py` |
 | Poll loop + structured logging | **Built** | `ingest/opensky_poller.py`, `common/logging_config.py` |
 | Silver layer, schemas, flight segments | Planned (Phase 2) | |
@@ -512,19 +628,30 @@ the actual gate**, which is why it runs the same checks.
 | Prometheus, Grafana, Evidently | Planned (Phase 8) | |
 | Docker Compose | Deferred by decision, returns with the first service to containerise | |
 
-**Test suite:** 174 tests, no network, no sleeping, runs in about three seconds.
+**Test suite:** 261 tests, no network, no sleeping, runs in about 3.5 seconds.
 
 **Runnable:** `uv run flight-delay-ingest` polls the configured airports and
 writes bronze Parquet. Credentials required (plan task 0.7).
 
-**Not yet verified against the live API.** Everything above is tested against
-mocks built from documented behaviour. The first real call is where endpoint
-URLs, header names, and response shapes get confirmed. That is blocked on
-registering an OpenSky API client (plan task 0.7).
+**Live verification status.** Partly confirmed, and worth reading precisely:
+
+| Source | Status |
+|---|---|
+| OpenSky `/states/all` | **Verified.** A real run collected 514 rows across 171 aircraft and 3 airports. |
+| NOAA METAR | **Verified.** `visib` really does arrive as the string `"10+"`, and `fltCat` is present. |
+| FAA closures | **Verified**, and it found a bug: the feed sends `<Start>` and `<Reopen>`, not the `<Start_Time>` and `<End_Time>` the parser assumed. Timestamps were silently None. |
+| FAA ground stops and GDPs | **Unverified.** No programs were active when the feed was captured, and these are the sections the model actually needs. |
+| NOAA TAF | **Unverified.** |
+| OpenSky aircraft CSV, BTS | **Unverified.** Never downloaded. |
+
+Real captured payloads live in `tests/fixtures/` and are asserted against in
+`tests/test_live_fixtures.py`. Those are snapshots of one moment, not a live
+check: green means "we still parse what the API sent that day", not "the API
+still sends this".
 
 ---
 
-## 12. Decision log
+## 13. Decision log
 
 Decisions where the plan was changed, or where a non-obvious option was chosen.
 Recorded so the reasoning survives.
@@ -556,10 +683,22 @@ Recorded so the reasoning survives.
 | 23 | blake2b-128 rather than SHA-256 for the content hash | Hash columns are high-cardinality, so dictionary encoding cannot compress them and the width is paid per row forever. 128 bits is ample at this volume. |
 | 24 | `tzdata` as an explicit dependency | Python's `zoneinfo` reads the system tz database, which Windows lacks and slim containers strip. Without it pyarrow cannot resolve even "UTC" and reading our own Parquet fails. |
 | 25 | Structured event names everywhere, not formatted prose | Operational questions about a poller are aggregations. `poll.completed` with fields is a filter; a sentence is a regex against text someone will reword. |
+| 26 | Explicit `faa_code` per airport, not derived from ICAO | Stripping the leading K works in the continental US and breaks in Alaska and Hawaii (`PANC` is `ANC`). Same reasoning as `metar_station`. |
+| 27 | Aircraft table stores `built`, not `age` | A stored age is wrong the moment the year turns. Deriving costs a subtraction; storing costs a silently stale table every January. |
+| 28 | Aircraft reference lives outside bronze | Bronze is an append-only observation log; this is a lookup table replaced wholesale. Mixing them means rewriting bronze partitions or deduplicating dozens of snapshots. |
+| 29 | `defusedxml` for the FAA feed | Stdlib ElementTree is documented as vulnerable to entity-expansion attacks, and this is externally controlled input. |
+| 30 | METAR and TAF keep the raw report text | The METAR string is the authoritative form. Anything mis-parsed today stays recoverable, without re-collecting data we can never go back for. |
+| 31 | Per-source poll cadences, scheduled independently | Polling everything at the fastest cadence burns OpenSky credits on weather that has not changed; polling at the slowest loses aircraft movement. |
+| 32 | Derived values (METAR ceiling) are not stored in bronze | A derived value in an append-only layer cannot be recomputed when its definition changes. `ceiling_ft` is a property computed by whoever consumes it. |
+| 33 | Recorded live payloads kept as fixtures beside the mocks | Mocks and code built from the same wrong assumption agree with each other. Only a real response falsifies the assumption, which is exactly how the FAA `<Start>`/`<Reopen>` bug surfaced after 252 green tests. |
+| 34 | Capture `fltCat` from METAR rather than recomputing it | The API derives flight category from visibility and ceiling together, which is the combination that drives arrival rates. It was being silently dropped by `extra="ignore"` until the live response was inspected. |
+| 35 | Apache Spark for the Phase 4 BTS label build only, DuckDB everywhere else | **Chosen for learning, not for scale, and recorded as such.** Measured volume is ~247k rows/day and ~90M rows/year (7 to 14 GB), which is DuckDB territory by an order of magnitude; Spark earns its keep in the hundreds of GB. BTS is the one genuinely large input (~84M rows of raw CSV) and an offline batch job, so a 15-second session startup costs nothing and cannot slow the 3.5-second test suite. |
+| 36 | Spark hands off to pandas/pyarrow once the data is small | Spark reads ~84M BTS rows and emits ~105k aggregated rows. Carrying a SparkSession into training and scoring would pay JVM startup on every run for a table that fits in memory many times over. |
+| 37 | LightGBM rather than Spark MLlib | MLlib exists for data too large for one machine, which does not apply at ~105k rows. Picking MLlib would mean choosing the weaker tabular model to justify the tool. |
 
 ---
 
-## 13. Known risks
+## 14. Known risks
 
 | Risk | Mitigation |
 |---|---|
@@ -570,10 +709,12 @@ Recorded so the reasoning survives.
 | Temporal leakage in training | All splits by date, never random. No feature may include future information |
 | METAR station is not always the airport | Modelled as an explicit per-airport field so the exception is representable |
 | OpenSky free tier is non-commercial | Fine for this project. Revisit before any commercial use |
+| Spark on Windows needs `winutils.exe` / `hadoop.dll` | Known setup friction, not a bug. Confined to Phase 4, so it cannot block Phases 2 and 3. A container is the fallback if local setup fights back |
+| Spark scope creep into the live pipeline | Decision log 35 states the boundary and the measured volumes behind it. Spark stays in the BTS label build |
 
 ---
 
-## 14. Explicitly out of scope for v1
+## 15. Explicitly out of scope for v1
 
 Multi-airport graph modelling of true cascade propagation. Postgres/TimescaleDB
 or S3 + Iceberg. Sequence models over raw trajectory windows. Learned anomaly

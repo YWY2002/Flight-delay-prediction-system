@@ -11,11 +11,18 @@ pipeline, not a notebook.
 
 ## Status
 
-Phase 1 - ingestion. OpenSky auth and `/states/all` are built and tested against
-mocks; nothing has been run against the live API yet (blocked on plan task 0.7,
-registering an OpenSky API client). See
-[implementation status](ARCHITECTURE.md#11-implementation-status) for the full
-inventory.
+**Phase 1 (ingestion) is complete.** All four sources are built and running:
+OpenSky state vectors, METAR, TAF, and FAA NAS status, each on its own cadence,
+landing in append-only partitioned Parquet.
+
+Live-verified: OpenSky, METAR, and FAA closures. Still unverified: TAF, and the
+FAA ground-stop and GDP sections (no programs were active when the feed was
+captured). See
+[implementation status](ARCHITECTURE.md#12-implementation-status) for the full
+inventory and
+[tech stack](ARCHITECTURE.md#1-tech-stack) for what the project runs on.
+
+Next: Phase 2, the silver layer.
 
 ## Quickstart
 

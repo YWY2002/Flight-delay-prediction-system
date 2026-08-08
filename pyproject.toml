@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 # Runtime dependencies stay empty until a phase actually needs one.
 # We add a dep in the same commit as the code that imports it - never "just in case".
 dependencies = [
+    "defusedxml>=0.7.1",
     "httpx>=0.28.1",
     "pyarrow>=25.0.0",
     "pydantic-settings>=2.14.2",
@@ -22,7 +23,9 @@ dependencies = [
 
 [project.scripts]
 # Runnable entry point for the ingestion loop: `uv run flight-delay-ingest`
-flight-delay-ingest = "flight_delay.ingest.opensky_poller:main"
+flight-delay-ingest = "flight_delay.ingest.poller:main"
+# One-off / monthly refresh of the aircraft reference table
+flight-delay-aircraft-db = "flight_delay.ingest.aircraft_metadata:main"
 
 [project.optional-dependencies]
 # (left for future runtime extras, e.g. serving-only or training-only installs)
@@ -34,6 +37,7 @@ dev = [
     "mypy>=1.11",
     "pytest>=8.0",
     "pre-commit>=4.6.1",
+    "types-defusedxml>=0.7.0.20260504",
 ]
 
 [build-system]

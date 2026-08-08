@@ -99,6 +99,23 @@ class Settings(BaseSettings):
         default="https://opensky-network.org/api",
         description="OpenSky REST API root.",
     )
+    weather_base_url: str = Field(
+        default="https://aviationweather.gov/api/data",
+        description="NOAA aviationweather.gov data API root (METAR, TAF).",
+    )
+    faa_base_url: str = Field(
+        default="https://nasstatus.faa.gov",
+        description="FAA NAS status root (ground stops, GDPs).",
+    )
+    aircraft_database_url: str = Field(
+        default=(
+            "https://opensky-network.org/datasets/metadata/aircraft-database-complete-2026-01.csv"
+        ),
+        description=(
+            "OpenSky aircraft metadata CSV snapshot. Versioned by month upstream, "
+            "so this needs bumping when refreshing."
+        ),
+    )
     opensky_token_url: str = Field(
         default=(
             "https://auth.opensky-network.org/auth/realms/opensky-network"
@@ -215,6 +232,19 @@ class Settings(BaseSettings):
     @property
     def gold_dir(self) -> Path:
         return self.data_dir / "gold"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def reference_dir(self) -> Path:
+        """Slowly-changing lookup tables, replaced wholesale rather than
+        appended. Separate from bronze, which is an append-only observation log
+        whose partitions are never rewritten."""
+        return self.data_dir / "reference"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def aircraft_reference_path(self) -> Path:
+        return self.reference_dir / "aircraft.parquet"
 
     # ---- Secret access -----------------------------------------------------
     def require_opensky_credentials(self) -> tuple[str, str]:

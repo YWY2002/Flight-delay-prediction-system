@@ -97,7 +97,7 @@
 
 **Definition of done:** `uv run pytest` passes (with one trivial test), `docker compose config` validates, pre-commit runs clean.
 
-**Actual status:** 131 tests pass, pre-commit runs clean. `docker compose config`
+**Actual status:** 252 tests pass, pre-commit runs clean. `docker compose config`
 is not applicable while 0.6 is deferred.
 
 ---
@@ -126,14 +126,42 @@ is not applicable while 0.6 is deferred.
     with 1.8–1.10. The 60 s floor is already enforced in `Settings`.
 
 ### 4.2 Weather client
-- [ ] 1.4 `get_metar(icao_ids)` — `https://aviationweather.gov/api/data/metar?ids=KJFK,KEWR&format=json`; poll every 10 min (METARs update hourly + SPECIs).
-- [ ] 1.5 `get_taf(icao_ids)` — same pattern, poll hourly.
+- [x] 1.4 `get_metar(icao_ids)` — `https://aviationweather.gov/api/data/metar?ids=KJFK,KEWR&format=json`; poll every 10 min (METARs update hourly + SPECIs).
+  - `ingest/weather_client.py`. All stations in one request, not one per airport.
+  - Two upstream fields need real handling: `visib` arrives as `"10+"`, `"1/2"`,
+    `"1 1/2"` or a number, and `wdir` can be `"VRB"`. Both misbehave precisely in
+    bad weather, so parsing them loosely would null out the worst-weather rows.
+    That is a biased loss, not a random one.
+  - `raw_text` (the METAR string) is stored beside the parsed fields: it is the
+    authoritative form, so anything mis-parsed today stays recoverable.
+- [x] 1.5 `get_taf(icao_ids)` — same pattern, poll hourly.
+  - Forecast periods stored as a nested Parquet list. Interpreting them
+    ("deteriorating in next 2h") lands with 3.7, the task that consumes it.
 
 ### 4.3 FAA NAS status client
-- [ ] 1.6 Poll airport status/advisories every 5 min; parse ground stop / GDP events per airport.
+- [x] 1.6 Poll airport status/advisories every 5 min; parse ground stop / GDP events per airport.
+  - `ingest/faa_client.py`. XML, not JSON; parsed with `defusedxml`, since
+    stdlib ElementTree is documented as vulnerable to entity expansion and this
+    is externally controlled input.
+  - The endpoint is nationwide with no filter, so we fetch all and filter
+    locally. Both counts are logged: `matched` always zero while `nationwide` is
+    large means a broken code mapping, not calm skies.
+  - **Added `faa_code` to `config/airports.toml`.** The FAA says `EWR`, we say
+    `KEWR`. Dropping the leading K works in the continental US but breaks in
+    Alaska and Hawaii (`PANC` is `ANC`), so it is stated, not derived.
+  - The raw XML fragment is preserved per event: this contract is only loosely
+    documented and has not been verified against the live feed.
 
 ### 4.4 Aircraft metadata
-- [ ] 1.7 One-off script: download OpenSky aircraft database CSV → keep `icao24, typecode, model, built, operator`; derive `aircraft_age = current_year − built`. Store as a reference Parquet. Add a monthly refresh task.
+- [x] 1.7 One-off script: download OpenSky aircraft database CSV → keep `icao24, typecode, model, built, operator`; derive `aircraft_age = current_year − built`. Store as a reference Parquet. Add a monthly refresh task.
+  - `ingest/aircraft_metadata.py`, CLI `uv run flight-delay-aircraft-db`.
+  - Lands in `data/reference/`, **not bronze**: bronze is an append-only log of
+    observations, this is a lookup table replaced wholesale.
+  - **Deviation:** stores `built` and does not store age. A stored age is wrong
+    the moment the year turns; `aircraft_age(built, as_of_year=...)` derives it
+    at use. Implausible years are dropped so one bad row cannot skew fleet-age
+    features.
+  - Monthly refresh is re-running the CLI. Scheduling it is Phase 6.
 
 ### 4.5 Raw storage (bronze layer)
 - [x] 1.8 Writer: append Parquet files partitioned as `data/bronze/{source}/date=YYYY-MM-DD/hour=HH/*.parquet`.
@@ -157,11 +185,11 @@ is not applicable while 0.6 is deferred.
   - Runnable entry point: `uv run flight-delay-ingest`.
 
 ### 4.6 Tests
-- [ ] 1.11 Unit tests with recorded API fixtures (respx/vcr-style) — no live calls in CI.
-  - **OpenSky done; METAR and FAA pending** (those clients do not exist yet).
-    Uses `httpx.MockTransport` rather than respx: it is built into httpx, so no
-    extra dependency. Clocks and HTTP clients are injected, so no test sleeps or
-    touches the network.
+- [x] 1.11 Unit tests with recorded API fixtures (respx/vcr-style) — no live calls in CI.
+  - All four sources covered. Uses `httpx.MockTransport` rather than respx: it
+    ships inside httpx, so no extra dependency. Clocks and HTTP clients are
+    injected, so no test sleeps or touches the network. Shared sample payloads
+    live in `tests/samples.py`.
 - [x] 1.12 Contract test: parsing fails loudly (not silently) if OpenSky changes array shape.
   - The positional layout lives in one place (`_STATE_FIELDS`). A strict
     `icao24` pattern catches index drift; short arrays are rejected while
@@ -169,12 +197,16 @@ is not applicable while 0.6 is deferred.
 
 **Definition of done:** Run ingest for 1 hour locally → bronze Parquet exists for all 3 sources; killing/restarting the service loses no more than one poll cycle.
 
-**Actual status:** the OpenSky path is complete and runnable (`uv run
-flight-delay-ingest`). Atomic writes make the restart guarantee structural
-rather than hopeful: an interrupted write leaves no file at all, so at most the
-in-flight poll is lost. Still outstanding for this DoD: the METAR/TAF and FAA
-sources (1.4 to 1.6), and an actual one-hour run against the live API, which is
-blocked on 0.7.
+**Actual status:** all four sources are implemented and runnable through `uv run
+flight-delay-ingest`, each on its own cadence. Atomic writes make the restart
+guarantee structural rather than hopeful: an interrupted write leaves no file at
+all, so at most the in-flight poll is lost.
+
+Still outstanding for this DoD: **an actual one-hour run against the live APIs**,
+blocked on 0.7. Everything is verified against mocks built from documented
+behaviour. The FAA XML shape in particular is inferred from the published ATCSCC
+schema and has never been seen for real, so treat the first live run as something
+to inspect rather than trust.
 
 ---
 
@@ -223,13 +255,43 @@ blocked on 0.7.
 **Outcome:** A registered model that predicts near-term delay state per airport, with honest evaluation.
 
 ### 7.1 Labels
+
+> **Engine note: this phase uses Apache Spark, and it is the only phase that
+> does.** The rest of the pipeline uses DuckDB. The reasoning, including the
+> measured volumes that say Spark is oversized for the live path, is decision
+> log 35 in `ARCHITECTURE.md`. Read it before assuming Spark belongs elsewhere.
+
 - [ ] 4.1 Download 12+ months of BTS On-Time Performance CSVs for chosen airports; build `labels(airport, window_ts, target)`.
+  - **Built with PySpark.** This is the largest raw input in the project:
+    roughly 7M rows per month across all US flights, so 12 months is ~84M rows
+    and several GB of CSV before any filtering.
+  - **Not blocked by the label-lag problem in 4.3.** BTS data is historical and
+    already published, so this task can start at any time, in parallel with
+    Phases 2 and 3. Only the *join* against live features has to wait.
+  - Spark's job: read the raw monthly CSVs, filter to the chosen airports,
+    derive the 15-minute window key, and aggregate. Output is one row per
+    airport per window.
+  - **Where Spark stops.** 3 airports x 12 months of 15-minute windows is about
+    105,000 rows. That is a small table. Spark reads ~84M rows and hands off
+    ~105k, at which point the work returns to pandas/pyarrow. Carrying a
+    SparkSession into training would add startup cost and complexity for a table
+    that fits in memory many times over.
+  - Write the result as Parquet so the rest of the pipeline reads it with
+    DuckDB, exactly like every other table.
 - [ ] 4.2 Define v1 target (keep it simple): **binary — "will average departure delay at this airport exceed 15 min in the next 60 min?"** (Cascade severity regression comes later.)
-- [ ] 4.3 ⚠️ Gap to accept in v1: BTS history won't overlap your freshly-ingested OpenSky features (BTS lags ~2 months). Mitigation: keep ingesting; after 4–8 weeks you'll have overlapping feature+label months to train on. Until then, bootstrap with weather+BTS-derivable features only, and treat trajectory features as an additive upgrade once overlap exists. Document this in the README.
+- [ ] 4.3 ⚠️ Gap to accept in v1 (note: this blocks the feature-label JOIN, not the label build in 4.1): BTS history won't overlap your freshly-ingested OpenSky features (BTS lags ~2 months). Mitigation: keep ingesting; after 4–8 weeks you'll have overlapping feature+label months to train on. Until then, bootstrap with weather+BTS-derivable features only, and treat trajectory features as an additive upgrade once overlap exists. Document this in the README.
 
 ### 7.2 Training pipeline (a script, not a notebook)
 - [ ] 4.4 `training/build_dataset.py`: join gold features ↔ labels on airport+window; temporal train/val/test split (**never random** — split by date).
-- [ ] 4.5 `training/train.py`: baseline = predict majority class + a logistic regression; model = LightGBM. Log params, metrics, feature importance, and the exact data date-range to MLflow.
+  - **DuckDB, not Spark.** By this point both sides are small: gold features are
+    one row per airport-window, labels likewise. The heavy lifting finished in
+    4.1. Using Spark here would mean a JVM startup on every training run for a
+    join of a few hundred thousand rows.
+- [ ] 4.5 `training/train.py`: baseline = predict majority class + a logistic regression; model = LightGBM.
+  - **LightGBM, not Spark MLlib.** MLlib exists to train on data too large for
+    one machine. At ~105k rows that constraint does not apply, and LightGBM is
+    the stronger model on tabular data besides. Using MLlib here would be
+    choosing the weaker model to justify the tool. Log params, metrics, feature importance, and the exact data date-range to MLflow.
 - [ ] 4.6 Metrics: PR-AUC (delays are imbalanced), recall@precision=0.8, calibration curve, and lead-time analysis (does it fire *before* the delay?).
 - [ ] 4.7 `training/evaluate.py`: compare candidate vs. current production model on the same held-out window; emit pass/fail against thresholds (e.g., PR-AUC must not regress > 2%).
 - [ ] 4.8 Register passing models in MLflow Model Registry with stage `staging` → manual promote to `production` (v1: promotion = CI job with manual approval).

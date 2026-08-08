@@ -230,7 +230,14 @@ def test_sends_bbox_as_opensky_query_params() -> None:
 
 def test_bbox_from_a_real_airport_round_trips() -> None:
     """End to end from reference data: airport -> bbox -> query params."""
-    kjfk = Airport(icao="KJFK", name="JFK", lat=40.6398, lon=-73.7789, metar_station="KJFK")
+    kjfk = Airport(
+        icao="KJFK",
+        name="JFK",
+        lat=40.6398,
+        lon=-73.7789,
+        metar_station="KJFK",
+        faa_code="JFK",
+    )
     seen: list[httpx.Request] = []
     client = make_client(ok(states_payload()), seen=seen)
 

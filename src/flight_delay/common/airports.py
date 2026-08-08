@@ -55,6 +55,11 @@ class Airport(BaseModel):
     lat: float = Field(ge=-90.0, le=90.0)
     lon: float = Field(ge=-180.0, le=180.0)
     metar_station: str = Field(pattern=_ICAO_PATTERN)
+    # The FAA NAS status feed identifies airports by 3-letter code (EWR, not
+    # KEWR). Stated explicitly rather than derived by stripping the leading K:
+    # that rule holds in the continental US but breaks in Alaska and Hawaii,
+    # where PANC is ANC.
+    faa_code: str = Field(pattern=r"^[A-Z0-9]{3}$")
 
     def bounding_box(self, radius_nm: float) -> BoundingBox:
         """Derive a square-ish bbox extending `radius_nm` around the field.

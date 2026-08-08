@@ -1,31 +1,26 @@
-"""OpenSky polling loop: fetch state vectors per airport, land them in bronze.
+"""OpenSky state vectors: fetch per airport, land them in bronze.
 
 One structured log line per poll (plan task 1.10) carrying counts, latency, and
 remaining credits, so ingestion health is answerable from the logs alone before
 Prometheus exists in Phase 8.
 
-The loop here is deliberately minimal. Prefect takes over scheduling in Phase 6;
-this exists so Phase 1 has a runnable entry point and the bronze layer can be
-exercised for real.
+Scheduling lives in `poller.py`, which runs this alongside the weather and FAA
+sources on their own cadences.
 """
 
 from __future__ import annotations
 
-import signal
-import threading
 import time
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from types import FrameType
 
 import pyarrow as pa
 
-from flight_delay.common.airports import Airport, load_airports, resolve_active_airports
-from flight_delay.common.config import Settings, get_settings
-from flight_delay.common.logging_config import configure_logging, get_logger
+from flight_delay.common.airports import Airport
+from flight_delay.common.logging_config import get_logger
 from flight_delay.ingest.bronze import BronzeWriter, payload_hash
 from flight_delay.ingest.credit_budget import CreditBudgetExhausted
 from flight_delay.ingest.opensky_client import (
@@ -33,7 +28,6 @@ from flight_delay.ingest.opensky_client import (
     OpenSkyClient,
     StatesResponse,
     StateVector,
-    client_from_settings,
 )
 
 logger = get_logger(__name__)
@@ -247,93 +241,3 @@ def poll_all_once(
         )
         for airport in airports
     ]
-
-
-def run_poller(
-    settings: Settings | None = None,
-    *,
-    stop_event: threading.Event | None = None,
-    max_cycles: int | None = None,
-    interval_seconds: float | None = None,
-) -> None:
-    """Poll on a fixed cadence until stopped.
-
-    Args:
-        stop_event: Set to request shutdown. Waited on rather than slept
-            through, so Ctrl-C is honoured immediately instead of after the
-            remaining interval.
-        max_cycles: Stop after this many cycles. For tests and smoke runs.
-        interval_seconds: Override the configured cadence. An explicit argument
-            rather than config, so the 60 s credit-protection floor enforced in
-            `Settings` still applies to every real run while tests can drive
-            many cycles instantly.
-    """
-    settings = settings or get_settings()
-    stop = stop_event or threading.Event()
-    interval = interval_seconds if interval_seconds is not None else settings.opensky_poll_seconds
-
-    reference = load_airports(settings.airports_file)
-    airports = resolve_active_airports(settings.airports, reference)
-    writer = BronzeWriter(settings.bronze_dir)
-
-    logger.info(
-        "poller.starting",
-        airports=[a.icao for a in airports],
-        interval_seconds=interval,
-        bbox_radius_nm=settings.bbox_radius_nm,
-        daily_credits=settings.opensky_daily_credits,
-        bronze_dir=str(settings.bronze_dir),
-    )
-
-    cycles = 0
-    with client_from_settings(settings) as client:
-        while not stop.is_set():
-            cycle_started = time.monotonic()
-            poll_all_once(
-                client,
-                airports,
-                writer,
-                radius_nm=settings.bbox_radius_nm,
-            )
-            cycles += 1
-
-            if max_cycles is not None and cycles >= max_cycles:
-                break
-
-            # Subtract the work from the interval so cadence stays constant
-            # rather than drifting by however long each cycle took. A slow cycle
-            # shortens the wait; it never pushes the next poll later and later.
-            elapsed = time.monotonic() - cycle_started
-            remaining = max(0.0, interval - elapsed)
-            if remaining == 0.0 and interval > 0:
-                logger.warning(
-                    "poller.cycle_overran",
-                    elapsed_seconds=round(elapsed, 3),
-                    interval_seconds=interval,
-                )
-            stop.wait(remaining)
-
-    logger.info("poller.stopped", cycles=cycles)
-
-
-def main() -> None:
-    """CLI entry point: `uv run flight-delay-ingest`."""
-    settings = get_settings()
-    configure_logging(settings.log_level, json_logs=settings.log_json)
-
-    stop = threading.Event()
-
-    def handle_signal(signum: int, frame: FrameType | None) -> None:
-        # Set a flag rather than raising: the current write finishes and the
-        # loop exits cleanly, instead of tearing down mid-Parquet-write.
-        logger.info("poller.shutdown_requested", signal=signal.Signals(signum).name)
-        stop.set()
-
-    signal.signal(signal.SIGINT, handle_signal)
-    signal.signal(signal.SIGTERM, handle_signal)
-
-    run_poller(settings, stop_event=stop)
-
-
-if __name__ == "__main__":
-    main()

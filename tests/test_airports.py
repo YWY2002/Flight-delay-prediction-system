@@ -21,6 +21,7 @@ KJFK = Airport(
     lat=40.6398,
     lon=-73.7789,
     metar_station="KJFK",
+    faa_code="JFK",
 )
 
 
@@ -30,12 +31,12 @@ KJFK = Airport(
 def test_rejects_malformed_icao() -> None:
     """A lowercase or wrong-length id must fail loudly, not be coerced."""
     with pytest.raises(ValidationError):
-        Airport(icao="kjfk", name="x", lat=0.0, lon=0.0, metar_station="KJFK")
+        Airport(icao="kjfk", name="x", lat=0.0, lon=0.0, metar_station="KJFK", faa_code="JFK")
 
 
 def test_rejects_out_of_range_latitude() -> None:
     with pytest.raises(ValidationError):
-        Airport(icao="KJFK", name="x", lat=91.0, lon=0.0, metar_station="KJFK")
+        Airport(icao="KJFK", name="x", lat=91.0, lon=0.0, metar_station="KJFK", faa_code="JFK")
 
 
 def test_airport_is_immutable() -> None:
@@ -79,7 +80,14 @@ def test_bbox_rejects_nonpositive_radius() -> None:
 
 def test_bbox_clamps_near_the_pole() -> None:
     """Latitude must never exceed +/-90 even with an absurd radius."""
-    svalbard = Airport(icao="ENSB", name="Svalbard", lat=78.246, lon=15.4656, metar_station="ENSB")
+    svalbard = Airport(
+        icao="ENSB",
+        name="Svalbard",
+        lat=78.246,
+        lon=15.4656,
+        metar_station="ENSB",
+        faa_code="SVB",
+    )
     bbox = svalbard.bounding_box(radius_nm=1000.0)
     assert bbox.lamax <= 90.0
     assert bbox.lomin >= -180.0
@@ -114,6 +122,7 @@ name = "First"
 lat = 40.6398
 lon = -73.7789
 metar_station = "KJFK"
+faa_code = "JFK"
 
 [[airports]]
 icao = "KJFK"
@@ -121,6 +130,7 @@ name = "Duplicate"
 lat = 40.0
 lon = -73.0
 metar_station = "KJFK"
+faa_code = "JFK"
 """,
         encoding="utf-8",
     )

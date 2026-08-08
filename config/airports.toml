@@ -34,6 +34,7 @@ name = "John F. Kennedy International"
 lat = 40.6398
 lon = -73.7789
 metar_station = "KJFK"
+faa_code = "JFK"
 
 [[airports]]
 icao = "KEWR"
@@ -41,6 +42,7 @@ name = "Newark Liberty International"
 lat = 40.6925
 lon = -74.1687
 metar_station = "KEWR"
+faa_code = "EWR"
 
 [[airports]]
 icao = "KORD"
@@ -48,3 +50,4 @@ name = "Chicago O'Hare International"
 lat = 41.9786
 lon = -87.9048
 metar_station = "KORD"
+faa_code = "ORD"

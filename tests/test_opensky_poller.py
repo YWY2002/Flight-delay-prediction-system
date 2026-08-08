@@ -7,18 +7,13 @@ network.
 
 from __future__ import annotations
 
-import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pyarrow.parquet as pq
-import pytest
 
-from flight_delay.common.airports import Airport
-from flight_delay.common.config import Settings
-from flight_delay.ingest import opensky_poller
 from flight_delay.ingest.bronze import BronzeWriter
 from flight_delay.ingest.credit_budget import CreditBudget
 from flight_delay.ingest.opensky_client import OpenSkyClient, StateVector
@@ -27,23 +22,9 @@ from flight_delay.ingest.opensky_poller import (
     STATE_VECTOR_SCHEMA,
     poll_airport_once,
     poll_all_once,
-    run_poller,
     state_vector_to_row,
 )
-
-
-def make_settings(**overrides: Any) -> Settings:
-    """Build Settings ignoring any ambient .env file."""
-    return Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
-
-
-KJFK = Airport(icao="KJFK", name="JFK", lat=40.6398, lon=-73.7789, metar_station="KJFK")
-KEWR = Airport(icao="KEWR", name="Newark", lat=40.6925, lon=-74.1687, metar_station="KEWR")
-
-RAW_STATE: list[Any] = [
-    "3c6444", "DLH9LF  ", "Germany", 1458564120, 1458564120, -73.78, 40.64,
-    9639.3, False, 232.88, 98.26, 4.55, None, 9547.86, "1000", False, 0,
-]  # fmt: skip
+from tests.samples import KEWR, KJFK, RAW_STATE
 
 WHEN = datetime(2026, 8, 7, 14, 32, 10, tzinfo=UTC)
 
@@ -330,87 +311,3 @@ def test_duplicate_observations_across_cycles_share_a_hash(tmp_path: Path) -> No
         for r in pq.read_table(f).to_pylist()
     }
     assert len(hashes) == 1
-
-
-# ---- The loop --------------------------------------------------------------
-
-
-def patch_client(monkeypatch: pytest.MonkeyPatch, handler: Any) -> None:
-    monkeypatch.setattr(
-        opensky_poller,
-        "client_from_settings",
-        lambda settings: make_client(handler),
-    )
-
-
-def test_run_poller_stops_after_max_cycles(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`interval_seconds=0` keeps this instant. The 60 s credit floor still
-    applies to real runs; it lives in Settings, which this bypasses on purpose
-    rather than weakening."""
-    patch_client(monkeypatch, ok_handler(RAW_STATE))
-    settings = make_settings(airports="KJFK", data_dir=tmp_path)
-
-    run_poller(settings, max_cycles=3, interval_seconds=0.0)
-
-    files = list((tmp_path / "bronze" / SOURCE).rglob("*.parquet"))
-    assert len(files) == 3
-
-
-def test_run_poller_writes_under_the_configured_bronze_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    patch_client(monkeypatch, ok_handler(RAW_STATE))
-    settings = make_settings(airports="KJFK", data_dir=tmp_path)
-
-    run_poller(settings, max_cycles=1, interval_seconds=0.0)
-
-    assert (tmp_path / "bronze" / SOURCE).exists()
-
-
-def test_run_poller_polls_every_active_airport(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    patch_client(monkeypatch, ok_handler(RAW_STATE))
-    settings = make_settings(airports="KJFK,KEWR", data_dir=tmp_path)
-
-    run_poller(settings, max_cycles=1, interval_seconds=0.0)
-
-    airports = {
-        r["airport"]
-        for f in (tmp_path / "bronze" / SOURCE).rglob("*.parquet")
-        for r in pq.read_table(f).to_pylist()
-    }
-    assert airports == {"KJFK", "KEWR"}
-
-
-def test_run_poller_survives_a_failing_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The loop must keep running through outages. Ingestion history is on the
-    critical path for training data, so a dead poller is expensive."""
-
-    def failing(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(503, json={})
-
-    patch_client(monkeypatch, failing)
-    settings = make_settings(airports="KJFK", data_dir=tmp_path)
-
-    run_poller(settings, max_cycles=2, interval_seconds=0.0)
-
-    assert not (tmp_path / "bronze" / SOURCE).exists()
-
-
-def test_run_poller_honours_a_preset_stop_event(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Shutdown is checked before work starts, so SIGTERM during startup does
-    not still cost a poll."""
-    patch_client(monkeypatch, ok_handler(RAW_STATE))
-    settings = make_settings(airports="KJFK", data_dir=tmp_path)
-
-    stop = threading.Event()
-    stop.set()
-
-    run_poller(settings, stop_event=stop, interval_seconds=0.0)
-
-    assert not (tmp_path / "bronze").exists()
-
-    assert not (tmp_path / "bronze").exists()
