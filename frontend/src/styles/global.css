@@ -1,0 +1,142 @@
+/* ------------------------------------------------------------------ */
+/* Halcyon - design tokens                                             */
+/* Twilight-sky palette for anxious travelers: nothing shouts.         */
+/* ------------------------------------------------------------------ */
+
+:root {
+  /* sky */
+  --sky-zenith: #141936;
+  --sky-high: #232a55;
+  --sky-mid: #4b4278;
+  --sky-glow: #8c6296;
+  --sky-horizon: #d99873;
+
+  /* surfaces */
+  --glass: rgba(240, 238, 252, 0.07);
+  --glass-strong: rgba(240, 238, 252, 0.11);
+  --glass-border: rgba(255, 250, 240, 0.16);
+  --glass-border-soft: rgba(255, 250, 240, 0.09);
+
+  /* ink */
+  --ink: #f4f0e8;
+  --ink-dim: #bdb7d8;
+  --ink-faint: #8d87ad;
+
+  /* status - softened on purpose, no alarm red */
+  --calm-mint: #9edec4;
+  --calm-amber: #f2c98f;
+  --calm-coral: #ef9d8f;
+  --calm-sky: #9db8e8;
+
+  --font-display: 'Bricolage Grotesque Variable', system-ui, sans-serif;
+  --font-body: 'Nunito Sans Variable', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --radius-porthole: 46% / 38%;
+  --shadow-float: 0 18px 50px rgba(8, 10, 30, 0.45);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--ink);
+  background: var(--sky-zenith);
+  overflow-x: hidden;
+}
+
+::selection {
+  background: rgba(217, 152, 115, 0.4);
+}
+
+/* ---------------------------------------------------------------- */
+/* type helpers                                                      */
+/* ---------------------------------------------------------------- */
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 560;
+  letter-spacing: -0.015em;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* ---------------------------------------------------------------- */
+/* glass card                                                        */
+/* ---------------------------------------------------------------- */
+
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--glass-border-soft);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-radius: 20px;
+}
+
+.glass-hover {
+  transition: background 240ms ease, border-color 240ms ease, transform 240ms ease;
+}
+
+.glass-hover:hover {
+  background: var(--glass-strong);
+  border-color: var(--glass-border);
+}
+
+/* ---------------------------------------------------------------- */
+/* focus - visible but soft                                          */
+/* ---------------------------------------------------------------- */
+
+/* The outline follows each element's own border-radius; forcing a radius
+   here visibly reshapes pill inputs the moment they take focus. */
+:focus-visible {
+  outline: 2px solid var(--calm-sky);
+  outline-offset: 3px;
+}
+
+/* ---------------------------------------------------------------- */
+/* scrollbar, quiet                                                  */
+/* ---------------------------------------------------------------- */
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(200, 195, 230, 0.18);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(200, 195, 230, 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

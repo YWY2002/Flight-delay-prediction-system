@@ -1,0 +1,25 @@
+.sparkline {
+  position: relative;
+  width: 100%;
+}
+
+.sparkline svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.sparkline-tip {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: rgba(14, 17, 36, 0.95);
+  border: 1px solid var(--glass-border);
+  color: var(--ink);
+  font-size: 0.68rem;
+  pointer-events: none;
+  z-index: 3;
+}

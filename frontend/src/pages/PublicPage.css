@@ -1,0 +1,207 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 18px 26px 30px;
+}
+
+/* header */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--calm-amber);
+}
+
+.wordmark > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.wordmark-name {
+  font-size: 1.3rem;
+  font-weight: 640;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.wordmark-tag {
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* hero */
+.page-main {
+  flex: 1;
+}
+
+.hero {
+  text-align: center;
+  padding: 56px 0 40px;
+}
+
+.hero-title {
+  margin: 0;
+  font-size: clamp(2.3rem, 5.4vw, 3.8rem);
+  line-height: 1.08;
+  font-weight: 560;
+}
+
+.hero-sub {
+  margin: 18px auto 0;
+  max-width: 52ch;
+  color: var(--ink-dim);
+  font-size: 1.02rem;
+  line-height: 1.6;
+}
+
+.hero-mode {
+  margin-top: 30px;
+  display: flex;
+  justify-content: center;
+}
+
+/* airport cards */
+.airport-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.airport-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 22px 22px 18px;
+  cursor: pointer;
+  color: var(--ink);
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+}
+
+.airport-card-code {
+  font-size: 0.8rem;
+  letter-spacing: 0.2em;
+  color: var(--calm-amber);
+}
+
+.airport-card-city {
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+
+.airport-card-blurb {
+  color: var(--ink-dim);
+  font-size: 0.84rem;
+}
+
+.airport-card-icao {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+
+.airport-card-active {
+  background: var(--glass-strong);
+  border-color: var(--calm-amber);
+  box-shadow: 0 0 0 1px rgba(242, 201, 143, 0.35), var(--shadow-float);
+}
+
+.airport-nudge {
+  text-align: center;
+  color: var(--ink-faint);
+  margin-top: 34px;
+  font-size: 0.92rem;
+}
+
+.board-wrap {
+  margin-top: 26px;
+}
+
+/* flight number search */
+.flight-search {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+/* Search inputs stay pill-shaped no matter their size or focus state. */
+.flight-search-input input,
+.board-filter-search input {
+  border-radius: 999px;
+}
+
+.flight-search-results {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* The results column is ~640px wide, too narrow for the full board grid:
+   the 1fr city column collapses and the gate number overlaps it. Drop the
+   gate and status columns here; the popup carries those details. */
+.flight-search-results .flight-row {
+  grid-template-columns: 58px 44px 92px 1fr 92px;
+}
+
+.flight-search-results .flight-row-gate,
+.flight-search-results .flight-row-status {
+  display: none;
+}
+
+.flight-search-empty {
+  text-align: center;
+  color: var(--ink-faint);
+  padding: 30px 0;
+  margin: 0;
+}
+
+/* footer */
+.page-footer {
+  margin-top: 46px;
+  text-align: center;
+  color: var(--ink-faint);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 780px) {
+  .airport-cards {
+    grid-template-columns: 1fr;
+  }
+  .hero {
+    padding: 38px 0 30px;
+  }
+  .page {
+    padding: 14px 16px 24px;
+  }
+}
+
+/* Mirror FlightBoard.css breakpoints: it hides the number chip at 860px and
+   the airline chip at 560px, so the search grid sheds those columns too. */
+@media (max-width: 860px) {
+  .flight-search-results .flight-row {
+    grid-template-columns: 52px 40px 1fr 84px;
+  }
+}
+
+@media (max-width: 560px) {
+  .flight-search-results .flight-row {
+    grid-template-columns: 48px 1fr 80px;
+  }
+}

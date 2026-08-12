@@ -1,0 +1,246 @@
+.flight-modal {
+  background: linear-gradient(165deg, rgba(36, 40, 78, 0.92), rgba(24, 27, 56, 0.95));
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(20px);
+  color: var(--ink);
+  box-shadow: var(--shadow-float);
+  /* Mantine gives the modal shell its own overflow-y: auto. Left on, it draws
+     a native scrollbar over the right corners on top of the ScrollArea's own
+     one. The inner ScrollArea does all the scrolling here. */
+  overflow: hidden;
+}
+
+.flight-modal-body {
+  padding: 28px 30px 20px;
+}
+
+.flight-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.flight-modal-number {
+  margin: 4px 0 2px;
+  font-size: 2rem;
+  letter-spacing: 0.04em;
+}
+
+.flight-modal-airline {
+  margin: 0;
+  color: var(--ink-dim);
+  font-size: 0.9rem;
+}
+
+.flight-modal-close {
+  background: rgba(240, 238, 252, 0.08);
+  border: 1px solid var(--glass-border-soft);
+  color: var(--ink-dim);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 200ms ease, color 200ms ease;
+}
+
+.flight-modal-close:hover {
+  background: rgba(240, 238, 252, 0.16);
+  color: var(--ink);
+}
+
+/* route strip */
+.flight-modal-route {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin: 22px 0 6px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: rgba(20, 24, 52, 0.5);
+  border: 1px solid var(--glass-border-soft);
+}
+
+.flight-modal-endpoint {
+  display: flex;
+  flex-direction: column;
+  min-width: 70px;
+}
+
+.flight-modal-endpoint-right {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.flight-modal-code {
+  font-size: 1.5rem;
+  letter-spacing: 0.06em;
+}
+
+.flight-modal-city {
+  color: var(--ink-dim);
+  font-size: 0.82rem;
+}
+
+.flight-modal-path {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--calm-sky);
+}
+
+.flight-modal-dashes {
+  flex: 1;
+  height: 0;
+  border-top: 2px dashed rgba(157, 184, 232, 0.4);
+}
+
+/* facts + forecast grid */
+.flight-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 16px;
+}
+
+.flight-modal-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 16px;
+  background: rgba(20, 24, 52, 0.35);
+  border: 1px solid var(--glass-border-soft);
+}
+
+.flight-fact {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  color: var(--ink);
+}
+
+.flight-fact svg {
+  margin-top: 3px;
+  color: var(--ink-faint);
+  flex-shrink: 0;
+}
+
+.flight-fact > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.flight-fact-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.flight-fact-late {
+  color: var(--calm-coral);
+  font-style: normal;
+}
+
+.flight-modal-forecast {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(20, 24, 52, 0.35);
+  border: 1px solid var(--glass-border-soft);
+}
+
+.gauge {
+  width: 200px;
+  margin-top: 10px;
+}
+
+.gauge-number {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 640;
+  fill: var(--ink);
+}
+
+.flight-modal-reassure {
+  margin: 22px 0 0;
+  text-align: center;
+  color: var(--ink-dim);
+  font-size: 0.92rem;
+  max-width: 26ch;
+}
+
+.flight-modal-drivers {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.flight-modal-drivers li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--ink-dim);
+  background: rgba(240, 238, 252, 0.05);
+  border-radius: 10px;
+  padding: 7px 10px;
+}
+
+.flight-modal-drivers svg {
+  color: var(--calm-amber);
+  flex-shrink: 0;
+}
+
+.flight-modal-footer {
+  margin-top: 18px;
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}
+
+/* status dots shared with the board */
+.status-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-scheduled {
+  background: var(--calm-sky);
+}
+.status-boarding {
+  background: var(--calm-mint);
+  box-shadow: 0 0 8px rgba(158, 222, 196, 0.7);
+}
+.status-departed,
+.status-landed {
+  background: var(--ink-faint);
+}
+.status-en-route {
+  background: var(--calm-sky);
+  box-shadow: 0 0 8px rgba(157, 184, 232, 0.7);
+}
+.status-delayed {
+  background: var(--calm-amber);
+  box-shadow: 0 0 8px rgba(242, 201, 143, 0.7);
+}
+.status-cancelled {
+  background: var(--calm-coral);
+}
+
+@media (max-width: 640px) {
+  .flight-modal-grid {
+    grid-template-columns: 1fr;
+  }
+}

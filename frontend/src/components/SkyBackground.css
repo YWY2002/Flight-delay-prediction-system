@@ -1,0 +1,122 @@
+.sky {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.sky-gradient {
+  position: absolute;
+  inset: -20% 0 0 0;
+  background: linear-gradient(
+    180deg,
+    var(--sky-zenith) 0%,
+    var(--sky-high) 32%,
+    var(--sky-mid) 58%,
+    var(--sky-glow) 78%,
+    var(--sky-horizon) 100%
+  );
+  background-size: 100% 130%;
+  animation: sky-breathe 40s ease-in-out infinite alternate;
+}
+
+@keyframes sky-breathe {
+  from {
+    background-position: 50% 0%;
+    filter: saturate(0.95);
+  }
+  to {
+    background-position: 50% 45%;
+    filter: saturate(1.12);
+  }
+}
+
+.sky-star {
+  position: absolute;
+  border-radius: 50%;
+  background: #fdf7ec;
+  opacity: 0.5;
+  animation: star-twinkle 5s ease-in-out infinite;
+}
+
+@keyframes star-twinkle {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.sky-cloud {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(46px);
+  opacity: 0.5;
+}
+
+.sky-cloud-a {
+  width: 46vw;
+  height: 21vh;
+  top: 56%;
+  background: rgba(215, 176, 189, 0.32);
+  animation: cloud-drift 90s linear infinite;
+}
+
+.sky-cloud-b {
+  width: 34vw;
+  height: 16vh;
+  top: 70%;
+  background: rgba(239, 197, 160, 0.28);
+  animation: cloud-drift 120s linear infinite;
+  animation-delay: -45s;
+}
+
+.sky-cloud-c {
+  width: 52vw;
+  height: 18vh;
+  top: 34%;
+  background: rgba(150, 142, 210, 0.25);
+  animation: cloud-drift 150s linear infinite;
+  animation-delay: -100s;
+}
+
+@keyframes cloud-drift {
+  from {
+    left: -55vw;
+  }
+  to {
+    left: 105vw;
+  }
+}
+
+.sky-plane {
+  position: absolute;
+  top: 24%;
+  color: rgba(244, 240, 232, 0.5);
+  animation: plane-cross 75s linear infinite;
+  animation-delay: 6s;
+  left: -5vw;
+  transform: rotate(90deg);
+}
+
+@keyframes plane-cross {
+  0% {
+    left: -5vw;
+    top: 26%;
+  }
+  55% {
+    left: 105vw;
+    top: 18%;
+  }
+  55.01% {
+    left: -5vw;
+    top: 26%;
+  }
+  100% {
+    left: -5vw;
+    top: 26%;
+  }
+}

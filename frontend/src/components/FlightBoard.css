@@ -1,0 +1,239 @@
+.board {
+  padding: 26px 26px 14px;
+  box-shadow: var(--shadow-float);
+}
+
+.board-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.board-title {
+  margin: 6px 0 0;
+  font-size: 2.4rem;
+  line-height: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.board-title-sub {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 400;
+  color: var(--ink-dim);
+}
+
+/* filters */
+.board-filters {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.board-filter-search {
+  flex: 1 1 180px;
+  min-width: 160px;
+}
+
+.board-filter-airline {
+  flex: 1 1 170px;
+  min-width: 150px;
+}
+
+.board-filter-status {
+  flex: 0 1 150px;
+  min-width: 130px;
+}
+
+.board-filter-window {
+  flex: 1 1 100%;
+}
+
+/* legend row mirrors the grid of a flight row */
+.board-legend,
+.flight-row {
+  display: grid;
+  grid-template-columns: 58px 44px 92px 1fr 78px 120px 92px;
+  gap: 14px;
+  align-items: center;
+}
+
+.board-legend {
+  padding: 4px 16px 10px;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--glass-border-soft);
+}
+
+.board-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 2px 14px;
+}
+
+.flight-row {
+  width: 100%;
+  text-align: left;
+  background: rgba(240, 238, 252, 0.04);
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 12px 16px;
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+}
+
+.flight-row:hover {
+  border-color: var(--glass-border);
+}
+
+.flight-row-time {
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+.flight-row-airline {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+}
+
+.flight-row-number {
+  color: var(--ink-dim);
+  letter-spacing: 0.04em;
+}
+
+.flight-row-city {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flight-row-city em {
+  font-style: normal;
+  font-size: 0.68rem;
+  color: var(--ink-faint);
+  letter-spacing: 0.12em;
+}
+
+.flight-row-gate {
+  color: var(--ink-dim);
+  font-size: 0.8rem;
+}
+
+.flight-row-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--ink-dim);
+}
+
+.flight-row-status .status-dot {
+  margin-top: 0;
+}
+
+.flight-row-risk {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  line-height: 1.15;
+}
+
+.flight-row-risk em {
+  font-style: normal;
+  font-family: var(--font-body);
+  font-size: 0.62rem;
+  color: var(--ink-faint);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.risk-low {
+  color: var(--calm-mint);
+}
+.risk-medium {
+  color: var(--calm-amber);
+}
+.risk-high {
+  color: var(--calm-coral);
+}
+
+/* empty state */
+.board-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 46px 0;
+  color: var(--ink-dim);
+}
+
+.board-empty p {
+  margin: 0;
+}
+
+.board-empty-icon {
+  color: var(--ink-faint);
+  margin-bottom: 4px;
+}
+
+.board-empty-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+}
+
+@media (max-width: 860px) {
+  .board-legend,
+  .flight-row {
+    grid-template-columns: 52px 40px 1fr 90px 84px;
+  }
+  .board-legend span:nth-child(3),
+  .board-legend span:nth-child(5),
+  .flight-row-number,
+  .flight-row-gate {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .board {
+    padding: 18px 14px 10px;
+  }
+  .board-legend,
+  .flight-row {
+    grid-template-columns: 48px 1fr 80px;
+    gap: 10px;
+  }
+  .board-legend span:nth-child(2),
+  .board-legend span:nth-child(6),
+  .flight-row-airline,
+  .flight-row-status {
+    display: none;
+  }
+}

@@ -1,0 +1,163 @@
+/* The edge tab, riding the right side of the viewport. */
+.pulse-tab {
+  position: fixed;
+  right: 0;
+  top: 46%;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 10px 12px;
+  background: rgba(28, 32, 64, 0.85);
+  border: 1px solid var(--glass-border);
+  border-right: none;
+  border-radius: 14px 0 0 14px;
+  color: var(--ink-dim);
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  writing-mode: vertical-rl;
+  transition: background 220ms ease, color 220ms ease, transform 220ms ease;
+}
+
+.pulse-tab:hover {
+  background: rgba(38, 43, 82, 0.95);
+  color: var(--ink);
+  transform: translateX(-2px);
+}
+
+.pulse-tab-text {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+.pulse-beacon {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  flex-shrink: 0;
+}
+
+.pulse-beacon-awake {
+  background: var(--calm-mint);
+  animation: beacon 2.4s ease-in-out infinite;
+}
+
+@keyframes beacon {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(158, 222, 196, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(158, 222, 196, 0);
+  }
+}
+
+/* drawer */
+.pulse-drawer {
+  background: linear-gradient(180deg, rgba(30, 34, 68, 0.97), rgba(21, 24, 50, 0.99));
+  color: var(--ink);
+}
+
+.pulse-drawer-header {
+  background: transparent;
+  color: var(--ink);
+}
+
+.pulse-drawer-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.pulse-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 28px 18px;
+  border-radius: 18px;
+  background: rgba(240, 238, 252, 0.05);
+  border: 1px solid var(--glass-border-soft);
+}
+
+.pulse-card h3 {
+  margin: 6px 0 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.pulse-card p {
+  margin: 0;
+  color: var(--ink-dim);
+  font-size: 0.88rem;
+  max-width: 30ch;
+}
+
+.pulse-icon {
+  color: var(--ink-faint);
+}
+
+.pulse-icon-awake {
+  color: var(--calm-mint);
+}
+
+.pulse-spin {
+  animation: pulse-rotate 1.4s linear infinite;
+}
+
+@keyframes pulse-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.pulse-facts {
+  margin: 22px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pulse-facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.82rem;
+}
+
+.pulse-facts dt {
+  color: var(--ink-faint);
+}
+
+.pulse-facts dd {
+  margin: 0;
+  color: var(--ink-dim);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.pulse-refresh {
+  margin-top: 24px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  background: rgba(240, 238, 252, 0.07);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  transition: background 200ms ease;
+}
+
+.pulse-refresh:hover {
+  background: rgba(240, 238, 252, 0.13);
+}
