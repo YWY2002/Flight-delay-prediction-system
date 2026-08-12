@@ -19,7 +19,7 @@ from pydantic import SecretStr, ValidationError
 
 from flight_delay.common.airports import Airport, BoundingBox
 from flight_delay.common.config import Settings
-from flight_delay.ingest.opensky_client import (
+from flight_delay.ingest.opensky.client import (
     OpenSkyApiError,
     OpenSkyClient,
     OpenSkyRateLimitError,

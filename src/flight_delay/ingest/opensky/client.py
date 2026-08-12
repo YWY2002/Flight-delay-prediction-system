@@ -36,12 +36,12 @@ from tenacity import Retrying
 from flight_delay.common.airports import BoundingBox
 from flight_delay.common.config import Settings
 from flight_delay.common.logging_config import get_logger
-from flight_delay.ingest.credit_budget import CreditBudget
-from flight_delay.ingest.opensky_auth import (
+from flight_delay.ingest.opensky.auth import (
     OpenSkyAuth,
     OpenSkyTokenProvider,
     token_provider_from_settings,
 )
+from flight_delay.ingest.opensky.credit_budget import CreditBudget
 from flight_delay.ingest.retry import build_retrying, call_with_retry
 
 logger = get_logger(__name__)

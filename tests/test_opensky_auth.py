@@ -17,7 +17,7 @@ import pytest
 from pydantic import SecretStr
 
 from flight_delay.common.config import Settings
-from flight_delay.ingest.opensky_auth import (
+from flight_delay.ingest.opensky.auth import (
     OpenSkyAuth,
     OpenSkyAuthError,
     OpenSkyTokenProvider,

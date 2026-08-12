@@ -292,6 +292,14 @@ not touch feature code.
 src/flight_delay/
   common/     config, reference data, schemas, storage IO
   ingest/     API clients and pollers          (raw data in)
+    poller.py   the orchestrator: every source, each on its own cadence
+    bronze.py   append-only partitioned Parquet writer   } shared by
+    errors.py   the retryable/non-retryable error family } every
+    http.py     status-code to error mapping             } source
+    retry.py    tenacity policy: jitter, Retry-After     }
+    opensky/    state vectors, OAuth2, credit budget, aircraft reference DB
+    weather/    METAR observations and TAF forecasts
+    faa/        NAS status: ground stops, GDPs, closures
   features/   trajectory + weather feature logic
   training/   dataset build, train, evaluate
   serving/    FastAPI app                       (predictions out)
@@ -301,6 +309,13 @@ tests/        unit + contract tests, no live network
 
 One installable package (`flight_delay.ingest`, not a bare top-level `ingest`)
 so generic names cannot collide with other installed libraries.
+
+Inside `ingest/`, each upstream API owns a subpackage and the shared machinery
+stays flat at the top. The split is a dependency rule, not just tidiness:
+`opensky/`, `weather/`, and `faa/` never import each other. Anything two sources
+both need moves up to the flat layer, so a module's location tells you its
+blast radius. `poller.py` sits at the top because it is the one thing that
+legitimately knows about all three.
 
 ### Current module map `BUILT`
 
@@ -316,8 +331,8 @@ flowchart TD
     APT -->|"reference entries"| RES
     RES --> BBOX["bounding_box radius_nm"]
 
-    CFG -->|"credentials, urls, timeout"| AUTH["ingest/opensky_auth.py<br/>OpenSkyTokenProvider<br/>OpenSkyAuth"]
-    AUTH -->|"httpx.Auth"| CLI["ingest/opensky_client.py<br/>OpenSkyClient"]
+    CFG -->|"credentials, urls, timeout"| AUTH["ingest/opensky/auth.py<br/>OpenSkyTokenProvider<br/>OpenSkyAuth"]
+    AUTH -->|"httpx.Auth"| CLI["ingest/opensky/client.py<br/>OpenSkyClient"]
     BBOX -->|"lamin/lamax/lomin/lomax"| CLI
     CLI --> SV["StateVector<br/>typed, validated"]
 ```
@@ -326,15 +341,15 @@ flowchart TD
 |---|---|
 | [`common/config.py`](src/flight_delay/common/config.py) | `Settings`: environment-varying configuration and secrets |
 | [`common/airports.py`](src/flight_delay/common/airports.py) | `Airport`, `BoundingBox`, reference loading, bbox derivation |
-| [`ingest/opensky_auth.py`](src/flight_delay/ingest/opensky_auth.py) | OAuth2 client credentials, token caching and refresh |
-| [`ingest/opensky_client.py`](src/flight_delay/ingest/opensky_client.py) | `/states/all` calls, positional array parsing |
-| [`ingest/credit_budget.py`](src/flight_delay/ingest/credit_budget.py) | Daily credit accounting and the proactive spend gate |
+| [`ingest/opensky/auth.py`](src/flight_delay/ingest/opensky/auth.py) | OAuth2 client credentials, token caching and refresh |
+| [`ingest/opensky/client.py`](src/flight_delay/ingest/opensky/client.py) | `/states/all` calls, positional array parsing |
+| [`ingest/opensky/credit_budget.py`](src/flight_delay/ingest/opensky/credit_budget.py) | Daily credit accounting and the proactive spend gate |
 | [`ingest/retry.py`](src/flight_delay/ingest/retry.py) | Backoff policy for transient failures |
 | [`ingest/bronze.py`](src/flight_delay/ingest/bronze.py) | Append-only partitioned Parquet writer, content hashing |
-| [`ingest/opensky_poller.py`](src/flight_delay/ingest/opensky_poller.py) | OpenSky poll function, bronze schema, row mapping |
-| [`ingest/weather_client.py`](src/flight_delay/ingest/weather_client.py) | METAR and TAF from aviationweather.gov |
-| [`ingest/faa_client.py`](src/flight_delay/ingest/faa_client.py) | FAA NAS status, XML parsing |
-| [`ingest/aircraft_metadata.py`](src/flight_delay/ingest/aircraft_metadata.py) | Aircraft reference table (not bronze) |
+| [`ingest/opensky/poller.py`](src/flight_delay/ingest/opensky/poller.py) | OpenSky poll function, bronze schema, row mapping |
+| [`ingest/weather/client.py`](src/flight_delay/ingest/weather/client.py) | METAR and TAF from aviationweather.gov |
+| [`ingest/faa/client.py`](src/flight_delay/ingest/faa/client.py) | FAA NAS status, XML parsing |
+| [`ingest/opensky/aircraft_metadata.py`](src/flight_delay/ingest/opensky/aircraft_metadata.py) | Aircraft reference table (not bronze) |
 | [`ingest/errors.py`](src/flight_delay/ingest/errors.py), [`ingest/http.py`](src/flight_delay/ingest/http.py) | Shared error taxonomy and status mapping |
 | [`ingest/poller.py`](src/flight_delay/ingest/poller.py) | Multi-source scheduler, per-source cadences, CLI |
 | [`common/logging_config.py`](src/flight_delay/common/logging_config.py) | structlog setup, stdlib logging routed through it |
@@ -610,15 +625,15 @@ the actual gate**, which is why it runs the same checks.
 | Line-ending and binary policy | **Built** | `.gitattributes` |
 | Settings and secrets | **Built** | `common/config.py` |
 | Airport reference data, bbox derivation | **Built** | `common/airports.py`, `config/airports.toml` |
-| OpenSky OAuth2 and auto-refresh | **Built** | `ingest/opensky_auth.py` |
-| OpenSky `/states/all` and typed parsing | **Built** | `ingest/opensky_client.py` |
-| Credit budgeting, retry, backoff | **Built** | `ingest/credit_budget.py`, `ingest/retry.py` |
-| METAR / TAF client | **Built** | `ingest/weather_client.py` |
-| FAA NAS status client | **Built** | `ingest/faa_client.py` |
-| Aircraft metadata | **Built** | `ingest/aircraft_metadata.py` |
+| OpenSky OAuth2 and auto-refresh | **Built** | `ingest/opensky/auth.py` |
+| OpenSky `/states/all` and typed parsing | **Built** | `ingest/opensky/client.py` |
+| Credit budgeting, retry, backoff | **Built** | `ingest/opensky/credit_budget.py`, `ingest/retry.py` |
+| METAR / TAF client | **Built** | `ingest/weather/client.py` |
+| FAA NAS status client | **Built** | `ingest/faa/client.py` |
+| Aircraft metadata | **Built** | `ingest/opensky/aircraft_metadata.py` |
 | Multi-source scheduler | **Built** | `ingest/poller.py` |
 | Bronze Parquet writer, content hashing | **Built** | `ingest/bronze.py` |
-| Poll loop + structured logging | **Built** | `ingest/opensky_poller.py`, `common/logging_config.py` |
+| Poll loop + structured logging | **Built** | `ingest/opensky/poller.py`, `common/logging_config.py` |
 | Silver layer, schemas, flight segments | Planned (Phase 2) | |
 | Go-around and hold detectors, gold features | Planned (Phase 3) | |
 | BTS labels, training, MLflow gate | Planned (Phase 4) | |

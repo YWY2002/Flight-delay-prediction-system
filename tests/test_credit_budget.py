@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from structlog.testing import capture_logs
 
-from flight_delay.ingest.credit_budget import CreditBudget, CreditBudgetExhausted
+from flight_delay.ingest.opensky.credit_budget import CreditBudget, CreditBudgetExhausted
 
 
 class FakeClock:

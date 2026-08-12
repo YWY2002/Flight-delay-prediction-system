@@ -15,9 +15,9 @@ import httpx
 import pyarrow.parquet as pq
 
 from flight_delay.ingest.bronze import BronzeWriter
-from flight_delay.ingest.credit_budget import CreditBudget
-from flight_delay.ingest.opensky_client import OpenSkyClient, StateVector
-from flight_delay.ingest.opensky_poller import (
+from flight_delay.ingest.opensky.client import OpenSkyClient, StateVector
+from flight_delay.ingest.opensky.credit_budget import CreditBudget
+from flight_delay.ingest.opensky.poller import (
     SOURCE,
     STATE_VECTOR_SCHEMA,
     poll_airport_once,

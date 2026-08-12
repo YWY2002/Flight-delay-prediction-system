@@ -15,14 +15,14 @@ import httpx
 import pytest
 
 from flight_delay.common.airports import BoundingBox
-from flight_delay.ingest.credit_budget import CreditBudget, CreditBudgetExhausted
-from flight_delay.ingest.opensky_client import (
+from flight_delay.ingest.opensky.client import (
     OpenSkyApiError,
     OpenSkyClient,
     OpenSkyRateLimitError,
     OpenSkyServerError,
     OpenSkyTransportError,
 )
+from flight_delay.ingest.opensky.credit_budget import CreditBudget, CreditBudgetExhausted
 from flight_delay.ingest.retry import build_retrying
 
 BBOX = BoundingBox(lamin=39.64, lamax=41.64, lomin=-75.10, lomax=-72.46)

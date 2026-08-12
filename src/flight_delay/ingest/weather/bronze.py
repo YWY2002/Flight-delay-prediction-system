@@ -12,7 +12,7 @@ from typing import Any
 import pyarrow as pa
 
 from flight_delay.ingest.bronze import payload_hash
-from flight_delay.ingest.weather_client import Metar, Taf
+from flight_delay.ingest.weather.client import Metar, Taf
 
 METAR_SOURCE = "metar"
 TAF_SOURCE = "taf"

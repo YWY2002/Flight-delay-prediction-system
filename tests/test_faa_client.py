@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 from flight_delay.ingest.errors import IngestError
-from flight_delay.ingest.faa_client import (
+from flight_delay.ingest.faa.client import (
     FaaApiError,
     FaaClient,
     faa_events_for,

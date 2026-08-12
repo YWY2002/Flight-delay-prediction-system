@@ -15,7 +15,7 @@ import httpx
 import pytest
 
 from flight_delay.ingest.errors import IngestError, RateLimitError
-from flight_delay.ingest.weather_client import (
+from flight_delay.ingest.weather.client import (
     Metar,
     Taf,
     WeatherApiError,

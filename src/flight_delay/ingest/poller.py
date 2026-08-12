@@ -31,13 +31,15 @@ from flight_delay.common.airports import Airport, load_airports, resolve_active_
 from flight_delay.common.config import Settings, get_settings
 from flight_delay.common.logging_config import configure_logging, get_logger
 from flight_delay.common.timeutil import utc_now
-from flight_delay.ingest import faa_client, opensky_client, weather_client
 from flight_delay.ingest.bronze import BronzeWriter
 from flight_delay.ingest.errors import IngestError
-from flight_delay.ingest.faa_bronze import FAA_SCHEMA, FAA_SOURCE, faa_event_to_row
-from flight_delay.ingest.faa_client import FaaClient, faa_events_for
-from flight_delay.ingest.opensky_poller import poll_all_once
-from flight_delay.ingest.weather_bronze import (
+from flight_delay.ingest.faa import client as faa_client
+from flight_delay.ingest.faa.bronze import FAA_SCHEMA, FAA_SOURCE, faa_event_to_row
+from flight_delay.ingest.faa.client import FaaClient, faa_events_for
+from flight_delay.ingest.opensky import client as opensky_client
+from flight_delay.ingest.opensky.poller import poll_all_once
+from flight_delay.ingest.weather import client as weather_client
+from flight_delay.ingest.weather.bronze import (
     METAR_SCHEMA,
     METAR_SOURCE,
     TAF_SCHEMA,
@@ -45,7 +47,7 @@ from flight_delay.ingest.weather_bronze import (
     metar_to_row,
     taf_to_row,
 )
-from flight_delay.ingest.weather_client import WeatherClient
+from flight_delay.ingest.weather.client import WeatherClient
 
 logger = get_logger(__name__)
 

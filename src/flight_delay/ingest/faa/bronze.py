@@ -8,7 +8,7 @@ from typing import Any
 import pyarrow as pa
 
 from flight_delay.ingest.bronze import payload_hash
-from flight_delay.ingest.faa_client import FaaEvent
+from flight_delay.ingest.faa.client import FaaEvent
 
 FAA_SOURCE = "faa_status"
 

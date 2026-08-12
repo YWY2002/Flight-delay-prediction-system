@@ -22,13 +22,13 @@ import pyarrow as pa
 from flight_delay.common.airports import Airport
 from flight_delay.common.logging_config import get_logger
 from flight_delay.ingest.bronze import BronzeWriter, payload_hash
-from flight_delay.ingest.credit_budget import CreditBudgetExhausted
-from flight_delay.ingest.opensky_client import (
+from flight_delay.ingest.opensky.client import (
     OpenSkyApiError,
     OpenSkyClient,
     StatesResponse,
     StateVector,
 )
+from flight_delay.ingest.opensky.credit_budget import CreditBudgetExhausted
 
 logger = get_logger(__name__)
 

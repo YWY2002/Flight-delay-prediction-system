@@ -11,7 +11,7 @@ from pathlib import Path
 import pyarrow.parquet as pq
 import pytest
 
-from flight_delay.ingest.aircraft_metadata import (
+from flight_delay.ingest.opensky.aircraft_metadata import (
     AIRCRAFT_SCHEMA,
     AircraftDatabaseError,
     aircraft_age,

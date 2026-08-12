@@ -108,15 +108,15 @@ is not applicable while 0.6 is deferred.
 
 ### 4.1 OpenSky client
 - [x] 1.1 OAuth2 client-credentials flow: exchange id/secret for bearer token; auto-refresh (tokens expire ~30 min).
-  - `ingest/opensky_auth.py`. Proactive refresh with a skew margin clamped to
+  - `ingest/opensky/auth.py`. Proactive refresh with a skew margin clamped to
     half the token lifetime; monotonic clock so NTP corrections cannot revive an
     expired token; one 401 retry for server-side revocation.
 - [x] 1.2 `get_states(bbox)` — call `/states/all` with `lamin/lamax/lomin/lomax` per airport (e.g., ~60 nm box around each). Parse the positional array into a typed Pydantic model (`icao24, callsign, lon, lat, baro_alt, geo_alt, velocity, heading, vertical_rate, on_ground, ts`).
-  - `ingest/opensky_client.py`. **Deviation:** units are in the field names
+  - `ingest/opensky/client.py`. **Deviation:** units are in the field names
     (`baro_altitude_m`, `velocity_ms`, `true_track_deg`) because OpenSky reports
     SI while Phase 3 thresholds are in feet. See decision log 7.
 - [x] 1.3 Credit budgeting: track requests/day; poll every 60–120 s per bbox; back off on 429/5xx with exponential retry (tenacity).
-  - `ingest/credit_budget.py` (proactive gate, UTC-midnight reset, reconciled
+  - `ingest/opensky/credit_budget.py` (proactive gate, UTC-midnight reset, reconciled
     against the server's `X-Rate-Limit-Remaining` header) and `ingest/retry.py`
     (tenacity; only `retryable` errors, `Retry-After` honoured over our own
     backoff, jittered, bounded attempts).
@@ -127,7 +127,7 @@ is not applicable while 0.6 is deferred.
 
 ### 4.2 Weather client
 - [x] 1.4 `get_metar(icao_ids)` — `https://aviationweather.gov/api/data/metar?ids=KJFK,KEWR&format=json`; poll every 10 min (METARs update hourly + SPECIs).
-  - `ingest/weather_client.py`. All stations in one request, not one per airport.
+  - `ingest/weather/client.py`. All stations in one request, not one per airport.
   - Two upstream fields need real handling: `visib` arrives as `"10+"`, `"1/2"`,
     `"1 1/2"` or a number, and `wdir` can be `"VRB"`. Both misbehave precisely in
     bad weather, so parsing them loosely would null out the worst-weather rows.
@@ -140,7 +140,7 @@ is not applicable while 0.6 is deferred.
 
 ### 4.3 FAA NAS status client
 - [x] 1.6 Poll airport status/advisories every 5 min; parse ground stop / GDP events per airport.
-  - `ingest/faa_client.py`. XML, not JSON; parsed with `defusedxml`, since
+  - `ingest/faa/client.py`. XML, not JSON; parsed with `defusedxml`, since
     stdlib ElementTree is documented as vulnerable to entity expansion and this
     is externally controlled input.
   - The endpoint is nationwide with no filter, so we fetch all and filter
@@ -154,7 +154,7 @@ is not applicable while 0.6 is deferred.
 
 ### 4.4 Aircraft metadata
 - [x] 1.7 One-off script: download OpenSky aircraft database CSV → keep `icao24, typecode, model, built, operator`; derive `aircraft_age = current_year − built`. Store as a reference Parquet. Add a monthly refresh task.
-  - `ingest/aircraft_metadata.py`, CLI `uv run flight-delay-aircraft-db`.
+  - `ingest/opensky/aircraft_metadata.py`, CLI `uv run flight-delay-aircraft-db`.
   - Lands in `data/reference/`, **not bronze**: bronze is an append-only log of
     observations, this is a lookup table replaced wholesale.
   - **Deviation:** stores `built` and does not store age. A stored age is wrong

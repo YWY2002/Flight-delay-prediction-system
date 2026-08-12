@@ -27,8 +27,8 @@ from __future__ import annotations
 
 import json
 
-from flight_delay.ingest.faa_client import parse_status_xml
-from flight_delay.ingest.weather_client import Metar
+from flight_delay.ingest.faa.client import parse_status_xml
+from flight_delay.ingest.weather.client import Metar
 from tests.samples import LIVE_FAA_XML, LIVE_METAR_JSON
 
 # ---- METAR -----------------------------------------------------------------

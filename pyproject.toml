@@ -25,7 +25,7 @@ dependencies = [
 # Runnable entry point for the ingestion loop: `uv run flight-delay-ingest`
 flight-delay-ingest = "flight_delay.ingest.poller:main"
 # One-off / monthly refresh of the aircraft reference table
-flight-delay-aircraft-db = "flight_delay.ingest.aircraft_metadata:main"
+flight-delay-aircraft-db = "flight_delay.ingest.opensky.aircraft_metadata:main"
 
 [project.optional-dependencies]
 # (left for future runtime extras, e.g. serving-only or training-only installs)
@@ -76,3 +76,6 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -q"
+
+[tool.uv.sources]
+opensky-api = { git = "https://github.com/openskynetwork/opensky-api.git", subdirectory = "python" }
