@@ -92,8 +92,8 @@ shared, so that is the right gate for tests.
 src/flight_delay/
   ingest/    # API clients + pollers (raw data in)
     poller.py            # the orchestrator, one cadence per source
-    bronze.py errors.py http.py retry.py   # shared by every source
-    opensky/ weather/ faa/                 # one subpackage per upstream API
+    bronze.py context.py errors.py http.py retry.py   # shared by every source
+    opensky/ weather/ faa/   # one subpackage per API: client, bronze, poller
   features/  # trajectory + weather feature logic
   training/  # dataset build, train, evaluate
   serving/   # FastAPI app (predictions out)

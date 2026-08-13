@@ -21,33 +21,26 @@ from __future__ import annotations
 import signal
 import threading
 import time
-import uuid
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
-from datetime import datetime
+from collections.abc import Callable
+from dataclasses import dataclass
 from types import FrameType
 
-from flight_delay.common.airports import Airport, load_airports, resolve_active_airports
+from flight_delay.common.airports import load_airports, resolve_active_airports
 from flight_delay.common.config import Settings, get_settings
 from flight_delay.common.logging_config import configure_logging, get_logger
-from flight_delay.common.timeutil import utc_now
 from flight_delay.ingest.bronze import BronzeWriter
+from flight_delay.ingest.context import SourceContext
 from flight_delay.ingest.errors import IngestError
 from flight_delay.ingest.faa import client as faa_client
-from flight_delay.ingest.faa.bronze import FAA_SCHEMA, FAA_SOURCE, faa_event_to_row
-from flight_delay.ingest.faa.client import FaaClient, faa_events_for
+from flight_delay.ingest.faa.bronze import FAA_SOURCE
+from flight_delay.ingest.faa.client import FaaClient
+from flight_delay.ingest.faa.poller import poll_faa_once
 from flight_delay.ingest.opensky import client as opensky_client
 from flight_delay.ingest.opensky.poller import poll_all_once
 from flight_delay.ingest.weather import client as weather_client
-from flight_delay.ingest.weather.bronze import (
-    METAR_SCHEMA,
-    METAR_SOURCE,
-    TAF_SCHEMA,
-    TAF_SOURCE,
-    metar_to_row,
-    taf_to_row,
-)
+from flight_delay.ingest.weather.bronze import METAR_SOURCE, TAF_SOURCE
 from flight_delay.ingest.weather.client import WeatherClient
+from flight_delay.ingest.weather.poller import poll_metar_once, poll_taf_once
 
 logger = get_logger(__name__)
 
@@ -73,101 +66,6 @@ class ScheduledSource:
 
     def schedule_next(self, now: float) -> None:
         self.next_due = now + self.interval_seconds
-
-
-@dataclass
-class SourceContext:
-    """Everything the per-source poll functions need."""
-
-    airports: Sequence[Airport]
-    writer: BronzeWriter
-    settings: Settings
-    clock: Callable[[], datetime] = utc_now
-    results: dict[str, int] = field(default_factory=dict)
-
-
-def poll_metar_once(
-    client: WeatherClient, context: SourceContext, *, poll_id: str | None = None
-) -> int:
-    """Fetch and store the latest METAR for every active airport."""
-    poll_id = poll_id or uuid.uuid4().hex
-    stations = [airport.metar_station for airport in context.airports]
-    started = time.monotonic()
-
-    observations = client.get_metar(stations)
-    ingested_at = context.clock()
-    rows = [metar_to_row(m, poll_id=poll_id, ingested_at=ingested_at) for m in observations]
-    result = context.writer.write(METAR_SOURCE, rows, METAR_SCHEMA, partition_time=ingested_at)
-
-    logger.info(
-        "poll.completed",
-        source=METAR_SOURCE,
-        poll_id=poll_id,
-        stations=len(stations),
-        observations=len(observations),
-        rows_written=result.rows,
-        bytes_written=result.bytes_written,
-        duration_seconds=round(time.monotonic() - started, 3),
-    )
-    return result.rows
-
-
-def poll_taf_once(
-    client: WeatherClient, context: SourceContext, *, poll_id: str | None = None
-) -> int:
-    """Fetch and store the current TAF for every active airport."""
-    poll_id = poll_id or uuid.uuid4().hex
-    stations = [airport.metar_station for airport in context.airports]
-    started = time.monotonic()
-
-    forecasts = client.get_taf(stations)
-    ingested_at = context.clock()
-    rows = [taf_to_row(t, poll_id=poll_id, ingested_at=ingested_at) for t in forecasts]
-    result = context.writer.write(TAF_SOURCE, rows, TAF_SCHEMA, partition_time=ingested_at)
-
-    logger.info(
-        "poll.completed",
-        source=TAF_SOURCE,
-        poll_id=poll_id,
-        stations=len(stations),
-        forecasts=len(forecasts),
-        rows_written=result.rows,
-        bytes_written=result.bytes_written,
-        duration_seconds=round(time.monotonic() - started, 3),
-    )
-    return result.rows
-
-
-def poll_faa_once(client: FaaClient, context: SourceContext, *, poll_id: str | None = None) -> int:
-    """Fetch nationwide FAA status and store the events for our airports.
-
-    The endpoint has no airport filter, so everything is fetched and filtered
-    here. `nationwide` is logged alongside `matched` because the ratio is a
-    useful sanity check: matched consistently zero while nationwide is large
-    suggests the faa_code mapping is wrong, not that the skies are calm.
-    """
-    poll_id = poll_id or uuid.uuid4().hex
-    started = time.monotonic()
-
-    all_events = client.get_status()
-    codes = {airport.faa_code for airport in context.airports}
-    events = faa_events_for(all_events, codes)
-
-    ingested_at = context.clock()
-    rows = [faa_event_to_row(e, poll_id=poll_id, ingested_at=ingested_at) for e in events]
-    result = context.writer.write(FAA_SOURCE, rows, FAA_SCHEMA, partition_time=ingested_at)
-
-    logger.info(
-        "poll.completed",
-        source=FAA_SOURCE,
-        poll_id=poll_id,
-        nationwide=len(all_events),
-        matched=len(events),
-        rows_written=result.rows,
-        bytes_written=result.bytes_written,
-        duration_seconds=round(time.monotonic() - started, 3),
-    )
-    return result.rows
 
 
 def _guard(name: str, poll: Callable[[], int], source: ScheduledSource) -> Callable[[], None]:

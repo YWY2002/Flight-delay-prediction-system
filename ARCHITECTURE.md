@@ -294,8 +294,9 @@ src/flight_delay/
   ingest/     API clients and pollers          (raw data in)
     poller.py   the orchestrator: every source, each on its own cadence
     bronze.py   append-only partitioned Parquet writer   } shared by
-    errors.py   the retryable/non-retryable error family } every
-    http.py     status-code to error mapping             } source
+    context.py  what a source poller needs to do its job } every
+    errors.py   the retryable/non-retryable error family } source
+    http.py     status-code to error mapping             }
     retry.py    tenacity policy: jitter, Retry-After     }
     opensky/    state vectors, OAuth2, credit budget, aircraft reference DB
     weather/    METAR observations and TAF forecasts
@@ -316,6 +317,20 @@ stays flat at the top. The split is a dependency rule, not just tidiness:
 both need moves up to the flat layer, so a module's location tells you its
 blast radius. `poller.py` sits at the top because it is the one thing that
 legitimately knows about all three.
+
+Every source subpackage has the same three parts, so knowing one teaches you
+the others:
+
+| | Owns | Changes when |
+|---|---|---|
+| `client.py` | HTTP and parsing into typed models | the upstream API changes |
+| `bronze.py` | model to bronze row, plus the pinned schema | the storage shape changes |
+| `poller.py` | one cycle of work, returning what it wrote | the unit of work changes |
+
+Imports run one way only, downward: a source poller imports `context.py`, never
+`poller.py`. The scheduler imports the source pollers. That direction is what
+keeps `SourceContext` at the flat layer rather than next to the scheduler that
+also uses it -- the reverse would be a cycle.
 
 ### Current module map `BUILT`
 
