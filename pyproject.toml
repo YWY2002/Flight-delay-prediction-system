@@ -13,6 +13,7 @@ dependencies = [
     "polars>=1.43.2",
     "pyarrow>=25.0.0",
     "pydantic-settings>=2.14.2",
+    "requests>=2.34.2",
     "structlog>=26.1.0",
     "tenacity>=9.1.4",
     # Not imported anywhere by us. Python's `zoneinfo` reads the SYSTEM timezone
@@ -24,10 +25,11 @@ dependencies = [
 ]
 
 [project.scripts]
-# Runnable entry point for the ingestion loop: `uv run flight-delay-ingest`
-flight-delay-ingest = "flight_delay.ingest.poller:main"
-# One-off / monthly refresh of the aircraft reference table
-flight-delay-aircraft-db = "flight_delay.ingest.opensky.aircraft_metadata:main"
+# Re-add as the ingestion package is rebuilt. The reference implementation in
+# ingestion_example/ wired these to `ingest.poller:main` and
+# `ingest.opensky.aircraft_metadata:main`.
+# flight-delay-ingest = "flight_delay.ingest.poller:main"
+# flight-delay-aircraft-db = "flight_delay.ingest.opensky.aircraft_metadata:main"
 
 [project.optional-dependencies]
 # (left for future runtime extras, e.g. serving-only or training-only installs)

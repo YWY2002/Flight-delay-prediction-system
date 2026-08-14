@@ -1,14 +1,3 @@
-"""Central deployment configuration, loaded from environment / `.env`.
-
-Split of responsibilities:
-    config.py     - settings that VARY BY ENVIRONMENT (paths, intervals, secrets)
-    airports.toml - domain facts that do NOT vary (coordinates, station ids)
-
-Precedence, highest first: explicit kwargs -> environment variables -> `.env`
-file -> field defaults. So CI and Docker override with real env vars, while a
-local `.env` keeps day-to-day development frictionless.
-"""
-
 from __future__ import annotations
 
 from functools import lru_cache
@@ -20,10 +9,6 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Repo root, derived from this file's location:
 #   src/flight_delay/common/config.py -> parents[3] == project root
-# Fine because we always run from a checkout or a container with the source
-# mounted. If this package were ever pip-installed into site-packages, these
-# defaults would point somewhere meaningless -- at which point set FDP_DATA_DIR
-# and FDP_AIRPORTS_FILE explicitly instead of relying on the defaults.
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 # Floor on the OpenSky poll interval. This is a DOMAIN constraint, not a
@@ -45,8 +30,7 @@ class Settings(BaseSettings):
         # Ignore unknown FDP_* vars rather than crashing, so a stale entry in
         # someone's .env doesn't block the whole app.
         extra="ignore",
-        # Immutable after construction: config read at step 40 of a pipeline is
-        # guaranteed identical to config read at step 1.
+        # Immutable after construction
         frozen=True,
     )
 

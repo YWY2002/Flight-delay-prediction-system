@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pyarrow as pa
 
+from opensky_api import OpenSkyApi
+
 from flight_delay.common.airports import Airport
 from flight_delay.common.logging_config import get_logger
 from flight_delay.ingest.bronze import BronzeWriter, payload_hash
