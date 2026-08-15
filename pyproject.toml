@@ -10,6 +10,7 @@ dependencies = [
     "defusedxml>=0.7.1",
     "duckdb>=1.5.5",
     "httpx>=0.28.1",
+    "opensky-api>=1.4.0",
     "polars>=1.43.2",
     "pyarrow>=25.0.0",
     "pydantic-settings>=2.14.2",

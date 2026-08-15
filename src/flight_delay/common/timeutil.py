@@ -24,6 +24,8 @@ def epoch_to_utc(value: object) -> object:
         return datetime.fromtimestamp(value, tz=UTC)
     return value
 
+def utc_to_epoch(utc_time: datetime) -> float:
+    return utc_time.timestamp()
 
 EpochSeconds = Annotated[datetime, BeforeValidator(epoch_to_utc)]
 

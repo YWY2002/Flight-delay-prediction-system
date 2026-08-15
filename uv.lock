@@ -291,6 +291,7 @@ dependencies = [
     { name = "defusedxml" },
     { name = "duckdb" },
     { name = "httpx" },
+    { name = "opensky-api" },
     { name = "polars" },
     { name = "pyarrow" },
     { name = "pydantic-settings" },
@@ -314,6 +315,7 @@ requires-dist = [
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "duckdb", specifier = ">=1.5.5" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "opensky-api", git = "https://github.com/openskynetwork/opensky-api.git?subdirectory=python" },
     { name = "polars", specifier = ">=1.43.2" },
     { name = "pyarrow", specifier = ">=25.0.0" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
@@ -519,6 +521,14 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/24/bf/d1bda4f6168e0b2e9e5958945e01910052158313224ada5ce1fb2e1113b8/nodeenv-1.10.0.tar.gz", hash = "sha256:996c191ad80897d076bdfba80a41994c2b47c68e224c542b48feba42ba00f8bb", size = 55611, upload-time = "2025-12-20T14:08:54.006Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/88/b2/d0896bdcdc8d28a7fc5717c305f1a861c26e18c05047949fb371034d98bd/nodeenv-1.10.0-py2.py3-none-any.whl", hash = "sha256:5bb13e3eed2923615535339b3c620e76779af4cb4c6a90deccc9e36b274d3827", size = 23438, upload-time = "2025-12-20T14:08:52.782Z" },
+]
+
+[[package]]
+name = "opensky-api"
+version = "1.4.0"
+source = { git = "https://github.com/openskynetwork/opensky-api.git?subdirectory=python#16e3803d2495d0029bebc3c85b2a235eeb122742" }
+dependencies = [
+    { name = "requests" },
 ]
 
 [[package]]
