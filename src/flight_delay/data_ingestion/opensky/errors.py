@@ -14,19 +14,15 @@ catch one type and mark the poll cycle failed.
 
 from __future__ import annotations
 
+from flight_delay.data_ingestion.errors import IngestError, status_is_retryable
 
-class OpenSkyPollError(RuntimeError):
+
+class OpenSkyPollError(IngestError):
     """Base class for every failure the OpenSky pollers raise.
 
-    Attributes:
-        retryable: Whether repeating the identical request could succeed.
-            Drives backoff decisions in the poll loop, so that a 429 costs a
-            wait and a 400 costs a bug report rather than four wasted credits.
+    Carries `retryable` from :class:`IngestError`, so a loop polling OpenSky
+    alongside the weather sources can catch one type and share one retry policy.
     """
-
-    def __init__(self, message: str, *, retryable: bool) -> None:
-        super().__init__(message)
-        self.retryable = retryable
 
 
 class OpenSkyUnreachable(OpenSkyPollError):
@@ -64,20 +60,6 @@ class OpenSkyRequestFailed(OpenSkyPollError):
             to get the real code.
     """
 
-    # 429 is the credit budget refilling and 5xx is OpenSky's problem, not
-    # ours; both clear up on their own. 408/425 are transport hiccups the
-    # server chose to report as a status. Everything else (400 malformed, 401
-    # bad token, 403 window not permitted for this account) is a defect in the
-    # request that will fail identically on every retry.
-    _RETRYABLE_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
-
     def __init__(self, message: str, *, status: int | None) -> None:
-        # An unobservable status is treated as retryable on purpose: retrying a
-        # fatal error wastes a few credits, while giving up on a transient one
-        # loses a window of flight data that can never be re-polled once it
-        # ages out of the free tier.
-        super().__init__(
-            message,
-            retryable=status is None or status in self._RETRYABLE_STATUSES,
-        )
+        super().__init__(message, retryable=status_is_retryable(status))
         self.status = status
