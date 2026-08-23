@@ -1,5 +1,5 @@
 from flight_delay.common.config import Settings, get_settings
-from opensky_api import OpenSkyApi, _count_utc_dates
+from opensky_api import OpenSkyApi, _count_utc_dates, FlightData, TokenManager
 from flight_delay.data_ingestion.opensky.poller import (
     poll_airport_departure_once,
     poll_airport_arrival_once,
@@ -18,23 +18,24 @@ import time
 
 def main() -> None:
     settings = get_settings()
+    client_id, client_secret = settings.require_opensky_credentials()
 
-    client = OpenSkyApi()
+
+    client = OpenSkyApi(token_manager=TokenManager(client_id, client_secret))
     # print(poll_airport_departure_once(settings, client, "WSSS", 1786759200, 1786766400))
     # print(client.get_states())
     start = utc_to_epoch(get_today_midnight_utc())
     end = utc_to_epoch(get_today_2am_utc())
     details = PollingDetails(settings=settings,
-                             airport="KJFK",
-                             epoch_start=start,
-                             epoch_end=end)
+                             airport="WSSS",
+                             epoch_start=1787234400,
+                             epoch_end=1787238000)
 
-    print(start)
-    print(end)
-    print(utc_now())
-    # print(poll_airport_arrival_once(client, details))
-    print(_count_utc_dates(start, end))
-    print(client.get_arrivals_by_airport("WSSS", 1786950000, 1786953600))
+    departure_data = poll_airport_arrival_once(client, details)
+    print(departure_data)
+    print(len(departure_data))
+    # print(client.get_departures_by_airport("WSSS", 1787234400, 1787238000))
+    # print(client.get_states())
 
 if __name__ == "__main__":
     main()

@@ -14,6 +14,7 @@ dependencies = [
     "polars>=1.43.2",
     "pyarrow>=25.0.0",
     "pydantic-settings>=2.14.2",
+    "pyspark>=4.2.0",
     "requests>=2.34.2",
     "structlog>=26.1.0",
     "tenacity>=9.1.4",
@@ -75,6 +76,13 @@ files = ["src", "tests"]
 # stays strictly checked.
 [[tool.mypy.overrides]]
 module = ["pyarrow.*"]
+ignore_missing_imports = true
+
+# Same story for the official OpenSky client: a single module, no py.typed.
+# Note it is `opensky_api`, not `opensky_api.*` - it is one flat module rather
+# than a package, so the wildcard form matches nothing.
+[[tool.mypy.overrides]]
+module = ["opensky_api"]
 ignore_missing_imports = true
 
 # ---- Tests ----
