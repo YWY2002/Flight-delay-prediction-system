@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     # the comma-splitting validator below. NoDecode passes the raw string
     # through, leaving parsing to us.
     airports: Annotated[tuple[str, ...], NoDecode] = Field(
-        default=("WSSS"),
+        default=("WSSS",),
         description="Active airports. Each must exist in the airport reference file.",
     )
     airports_file: Path = Field(

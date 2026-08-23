@@ -51,3 +51,17 @@ lat = 41.9786
 lon = -87.9048
 metar_station = "KORD"
 faa_code = "ORD"
+
+[[airports]]
+icao = "WSSS"
+name = "Singapore Changi"
+# ARP 01°21'33"N 103°59'22"E.
+lat = 1.3592
+lon = 103.9894
+metar_station = "WSSS"
+# SIN is Changi's IATA code, not an FAA one: WSSS is outside FAA NAS coverage,
+# so the FAA advisory poller will correctly never match it. The field is named
+# `faa_code` because every airport before this one was American. Filled in
+# rather than left blank only because the model requires it -- see the note in
+# `Airport.faa_code` if this becomes a real problem.
+faa_code = "SIN"

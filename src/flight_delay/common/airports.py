@@ -59,6 +59,12 @@ class Airport(BaseModel):
     # KEWR). Stated explicitly rather than derived by stripping the leading K:
     # that rule holds in the continental US but breaks in Alaska and Hawaii,
     # where PANC is ANC.
+    #
+    # Required, which is a poor fit for airports outside FAA coverage: WSSS
+    # carries its IATA code (SIN) purely to satisfy this, and no FAA advisory
+    # will ever match it. Harmless today because the FAA poller only filters.
+    # If non-US airports become the norm, make this `str | None = None` and
+    # have the FAA poller skip the Nones.
     faa_code: str = Field(pattern=r"^[A-Z0-9]{3}$")
 
     def bounding_box(self, radius_nm: float) -> BoundingBox:
@@ -75,9 +81,10 @@ class Airport(BaseModel):
 
         Known limitation: no antimeridian wraparound. An airport within
         `radius_nm` of +/-180 degrees longitude would clamp instead of splitting
-        into two boxes. Every airport in scope is in the US, so this is an
-        accepted simplification rather than an oversight -- revisit if the
-        project ever covers Fiji or the Aleutians.
+        into two boxes. No airport currently in `airports.toml` comes close --
+        the easternmost is WSSS at ~104 degrees E -- so this is an accepted
+        simplification rather than an oversight. Revisit if the project ever
+        covers Fiji or the Aleutians.
         """
         if radius_nm <= 0:
             raise ValueError(f"radius_nm must be positive, got {radius_nm}")

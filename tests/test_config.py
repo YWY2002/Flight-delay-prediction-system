@@ -40,7 +40,7 @@ def test_defaults_are_usable_without_any_env() -> None:
     """A fresh clone with no .env must still construct valid settings."""
     settings = make_settings()
 
-    assert settings.airports == ("KJFK", "KEWR", "KORD")
+    assert settings.airports == ("WSSS",)
     assert settings.bbox_radius_nm == 60.0
     assert settings.opensky_poll_seconds >= MIN_OPENSKY_POLL_SECONDS
     assert settings.opensky_client_id is None
