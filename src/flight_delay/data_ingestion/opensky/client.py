@@ -31,9 +31,17 @@ class TrackedOpenSkyApi(OpenSkyApi):  # type: ignore[misc]  # untyped base, see 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.last_status: int | None = None
+        # Counts responses actually received. `last_status` alone cannot tell
+        # "the server refused" from "we never sent anything", because
+        # `get_states` can bail out at its own client-side rate limiter before
+        # issuing a request -- leaving `last_status` holding the *previous*
+        # call's code. Snapshot this before a call and compare after to know
+        # whether the wire was touched at all.
+        self.responses_seen: int = 0
         # `_session` is private to the parent, but subclassing is the intended
         # way to reach it, and the alternative is vendoring `_get_json`.
         self._session.hooks["response"].append(self._record_status)
 
     def _record_status(self, response: Response, **_: Any) -> None:
         self.last_status = response.status_code
+        self.responses_seen += 1

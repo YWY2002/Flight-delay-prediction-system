@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from opensky_api import (
     FlightData,
     OpenSkyApi,
+    OpenSkyStates,
     _count_utc_dates,
 )
 from pydantic import BaseModel, Field, model_validator
@@ -21,12 +22,14 @@ from pydantic import BaseModel, Field, model_validator
 # `requests` exceptions escaping the client untouched.
 from requests import RequestException
 
+from flight_delay.common.airports import BoundingBox
 from flight_delay.common.config import Settings
 from flight_delay.common.logging_config import get_logger
 from flight_delay.common.timeutil import utc_now
 from flight_delay.data_ingestion.opensky.client import TrackedOpenSkyApi
 from flight_delay.data_ingestion.opensky.errors import (
     OpenSkyRequestFailed,
+    OpenSkyThrottled,
     OpenSkyUnreachable,
 )
 
@@ -201,3 +204,77 @@ def poll_airport_arrival_once(client: OpenSkyApi, details: PollingDetails) -> li
         "flights/arrival",
         _ARRIVAL_SETTLE_HOURS,
     )
+
+
+def poll_states_once(client: OpenSkyApi, bbox: BoundingBox) -> OpenSkyStates:
+    """Every aircraft state vector currently inside `bbox`.
+
+    The live half of ingestion. Where the flights endpoints lag by hours to
+    days, this reports what is airborne right now, and it is the only source of
+    the altitude/vertical-rate traces that approach-anomaly detection needs.
+
+    Returns:
+        The snapshot, whose `time` field stamps the validity of every vector in
+        it -- carry that, not the wall clock, as the observation timestamp. An
+        empty `states` list is normal rather than an error: a 60 nm box at 3am
+        often holds nothing.
+
+    Raises:
+        OpenSkyThrottled: the client's own limiter refused to send.
+        OpenSkyUnreachable: the request produced no HTTP response.
+        OpenSkyRequestFailed: a response arrived, but carried no data.
+    """
+    # `get_states` wants a positional 4-tuple, not the keyword arguments the
+    # BoundingBox field names mirror, and the order is both latitudes first:
+    # (lamin, lamax, lomin, lomax), NOT (lamin, lomin, lamax, lomax). Building
+    # it here keeps `common.airports` free of any opensky_api coupling.
+    bbox_tuple = (bbox.lamin, bbox.lamax, bbox.lomin, bbox.lomax)
+    where = (
+        f"states/all lat[{bbox.lamin:.4f},{bbox.lamax:.4f}] "
+        f"lon[{bbox.lomin:.4f},{bbox.lomax:.4f}]"
+    )
+
+    seen_before = client.responses_seen if isinstance(client, TrackedOpenSkyApi) else None
+
+    try:
+        states = client.get_states(bbox=bbox_tuple)
+    except RequestException as exc:
+        raise OpenSkyUnreachable(f"OpenSky {where} never completed: {exc}") from exc
+
+    if states is None:
+        # Unlike the flights endpoints, `get_states` guards itself with a
+        # client-side limiter and returns None *before sending anything* when
+        # it trips. `last_status` would still hold the previous call's code, so
+        # the response counter is what separates the two cases.
+        if seen_before is not None and client.responses_seen == seen_before:
+            raise OpenSkyThrottled(
+                f"OpenSky {where} was blocked by the client's own rate limiter; "
+                f"no request was sent. get_states permits one call every 5s "
+                f"authenticated (10s anonymous), counted per method rather than "
+                f"per bounding box -- polling several airports back to back "
+                f"through a single client will trip it."
+            )
+        status = client.last_status if isinstance(client, TrackedOpenSkyApi) else None
+        detail = (
+            f"HTTP {status}"
+            if status is not None
+            else "status unavailable (pass a TrackedOpenSkyApi to capture it)"
+        )
+        raise OpenSkyRequestFailed(f"OpenSky {where} returned no data: {detail}", status=status)
+
+    # `time` is the instant the whole snapshot describes; every vector in it is
+    # valid for [time - 1, time]. Logging its lag makes a stalled feed visible
+    # as growing staleness rather than as a silently repeating aircraft count.
+    snapshot_age = round(utc_now().timestamp() - states.time, 1)
+
+    if not states.states:
+        logger.info("opensky.states.empty", bbox=where, snapshot_age_s=snapshot_age)
+    else:
+        logger.debug(
+            "opensky.states.completed",
+            bbox=where,
+            aircraft=len(states.states),
+            snapshot_age_s=snapshot_age,
+        )
+
+    return states

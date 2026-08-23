@@ -40,6 +40,20 @@ class OpenSkyUnreachable(OpenSkyPollError):
         super().__init__(message, retryable=True)
 
 
+class OpenSkyThrottled(OpenSkyPollError):
+    """The client's own rate limiter refused to send the request.
+
+    Not a server 429: nothing left the process, no credits were spent, and
+    waiting is the only cure. `opensky_api` applies this to `get_states` alone
+    (5s between calls authenticated, 10s anonymous) and keys it on the *method*,
+    so several bounding boxes polled back to back through one client contend
+    with each other.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, retryable=True)
+
+
 class OpenSkyRequestFailed(OpenSkyPollError):
     """The API answered, but with something other than data.
 
