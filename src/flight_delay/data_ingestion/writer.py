@@ -1,1 +1,1 @@
-# from flight_delay.data_ingestion.main_poller import Poll
+from pyspark.sql import SparkSession

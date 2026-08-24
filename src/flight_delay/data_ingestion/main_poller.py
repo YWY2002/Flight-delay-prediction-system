@@ -1,10 +1,11 @@
 from flight_delay.common.config import Settings, get_settings
 from opensky_api import OpenSkyApi, _count_utc_dates, FlightData, TokenManager
 from flight_delay.data_ingestion.opensky.client import TrackedOpenSkyApi
+from flight_delay.data_ingestion.opensky.scheduler import wsss_bounding_box, run_states_scheduler
+from flight_delay.data_ingestion.weather.poller import poll_taf_once, poll_metar_once, weather_http_client, WeatherPollingDetails
+from flight_delay.data_ingestion.weather.scheduler import run_weather_scheduler
 from flight_delay.common.airports import load_airports
 from flight_delay.data_ingestion.opensky.poller import (
-    poll_airport_departure_once,
-    poll_airport_arrival_once,
     poll_states_once,
     PollingDetails
 )
@@ -23,10 +24,16 @@ def main() -> None:
     settings = get_settings()
     client_id, client_secret = settings.require_opensky_credentials()
     client = TrackedOpenSkyApi(token_manager=TokenManager(client_id, client_secret))
+    bbox = wsss_bounding_box(settings)
 
-    bbox = load_airports(settings.airports_file)["WSSS"].bounding_box(settings.bbox_radius_nm)
-    snapshot = poll_states_once(client, bbox)
-    print(snapshot)
+    # print(poll_states_once(client, bbox))
+    # http = weather_http_client(settings)
+    # details = WeatherPollingDetails(settings=settings, stations=("WSSS",))
+    # metars = poll_metar_once(http, details)
+    # tafs   = poll_taf_once(http, details)
+    # run_states_scheduler(client, bbox, BronzeWriterfunction)
+
+
 
 if __name__ == "__main__":
     main()
