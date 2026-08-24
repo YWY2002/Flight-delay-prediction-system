@@ -268,11 +268,23 @@ class BronzeWriter:
     """One Parquet file per source per UTC day, appended in place.
 
     Layout under `root` (normally `settings.bronze_dir`, so `data/bronze/...`;
-    pass `settings.data_dir` instead if you want `data/opensky/...` flat):
+    pass `settings.data_dir` instead if you want `data/opensky/...`):
 
-        <root>/opensky/2026-08/opensky_24082026.parquet
-        <root>/metar/2026-08/metar_24082026.parquet
-        <root>/taf/2026-08/taf_24082026.parquet
+        <root>/opensky/year=2026/month=08/day=24/opensky_24082026.parquet
+        <root>/metar/year=2026/month=08/day=24/metar_24082026.parquet
+        <root>/taf/year=2026/month=08/day=24/taf_24082026.parquet
+
+    The `key=value` directories are Hive partitioning, which Spark, pyarrow,
+    DuckDB and Polars all discover natively -- this is not a Glue or Athena
+    convention. It buys two things: `year`, `month` and `day` become real
+    queryable columns that are stored in no file, and a query for one day lists
+    directories rather than opening every file in the month.
+
+    `source` sits ABOVE the partition columns, so the three sources are three
+    independent datasets that merely share a partition scheme. Point readers at
+    `<root>/opensky`, never at `<root>`: a reader given the bronze root does not
+    error, it infers a schema from whichever file it meets first (alphabetically
+    METAR) and silently returns every OpenSky row as nulls under METAR's columns.
 
     Parquet files are immutable, so "append" here means read, concatenate and
     rewrite. That is quadratic in writes per day, which is worth stating plainly
@@ -299,10 +311,24 @@ class BronzeWriter:
         self._compression = compression
 
     def partition_dir(self, source: str, partition_time: datetime) -> Path:
-        return self._root / source / f"{partition_time.strftime('%Y-%m')}"
+        return (self._root / 
+                source / 
+                f"year={partition_time:%Y}" /
+                f"month={partition_time:%m}" /
+                f"day={partition_time:%d}"
+                )
 
     def file_path(self, source: str, partition_time: datetime) -> Path:
-        """The day file for `source`, e.g. `opensky/2026-08/opensky_24082026.parquet`.
+        """The day file for `source`.
+
+        e.g. `opensky/year=2026/month=08/day=24/opensky_24082026.parquet`.
+
+        The `ddmmyyyy` in the filename is redundant now that the path pins the
+        date, and on its own it would not sort chronologically. Both are fine:
+        each directory holds exactly one file, so nothing sorts against it, and
+        a name that reads as a date is worth keeping for anyone browsing the
+        bucket or handed a single file out of context. Query engines ignore
+        filenames entirely and read the date from the directories.
         """
         return self.partition_dir(source, partition_time) / (
             f"{source}_{partition_time.strftime('%d%m%Y')}.parquet"

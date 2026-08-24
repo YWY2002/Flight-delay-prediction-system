@@ -1,0 +1,42 @@
+# Secrets. This is the important line: .env holds FDP_OPENSKY_CLIENT_SECRET, and
+# anything copied into an image is readable by anyone who can pull it. Inject
+# credentials at run time instead (--env-file, or ECS secrets from SSM).
+.env
+*.pem
+*.key
+credentials.json
+
+# The host virtualenv is platform-specific and would shadow the one the builder
+# stage creates. Never ship it.
+.venv
+venv
+
+# Collected data. Bronze belongs on a volume, not baked into the image.
+data
+
+# Caches and build artefacts
+__pycache__
+*.py[cod]
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.ipynb_checkpoints
+*.egg-info
+dist
+build
+
+# Not needed by the ingestion service
+.git
+.github
+frontend
+ingestion_example
+tests
+*.ipynb
+*.md
+!README.md
+ARCHITECTURE.md
+flight-delay-pipeline-plan.md
+.pre-commit-config.yaml
+.gitattributes
+Dockerfile
+.dockerignore
