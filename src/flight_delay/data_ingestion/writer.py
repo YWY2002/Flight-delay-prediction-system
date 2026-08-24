@@ -1,11 +1,17 @@
 import os
-from datetime import datetime
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 from opensky_api import OpenSkyStates
-from pyspark.sql import SparkSession
+
+from flight_delay.common.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # OpenSky state vector schema
@@ -59,6 +65,14 @@ AIRCRAFT_CATEGORIES: dict[int, str] = {
 def _enum_doc(mapping: dict[int, str]) -> str:
     return ", ".join(f"{code} = {label}" for code, label in mapping.items())
 
+@dataclass(frozen=True)
+class WriteResult:
+    """Outcome of one write. Returned rather than logged so callers can report
+    it in their own structured log line and, later, as a metric."""
+
+    path: Path | None
+    rows: int
+    bytes_written: int
 
 STATE_VECTOR_SCHEMA = pa.schema(
     [
@@ -188,18 +202,91 @@ STATE_VECTOR_SCHEMA = pa.schema(
             pa.int8(),
             metadata={"doc": _enum_doc(AIRCRAFT_CATEGORIES)},
         ),
+        # Appended last, deliberately. Every field above is index-aligned with
+        # the wire array; this one is not on the vector at all. It comes from
+        # the enclosing OpenSkyStates, which stamps the whole snapshot. Putting
+        # it first would read more naturally but shift all 18 wire indices by
+        # one and cost the element-by-element diff this order exists for.
+        #
+        # int64 epoch seconds, matching time_position and last_contact. See the
+        # note there for why this is not an Arrow timestamp.
+        pa.field(
+            "snapshot_time",
+            pa.int64(),
+            nullable=False,
+            metadata={
+                "unit": "Unix epoch seconds, UTC",
+                "doc": (
+                    "OpenSkyStates.time: the instant this whole snapshot describes. "
+                    "Every vector in it is valid for [time - 1, time]."
+                ),
+            },
+        ),
     ],
     metadata={
         "source": "opensky /states/all",
         "layer": "bronze",
-        "field_order": "matches opensky_api.StateVector.keys, i.e. the wire array order",
+        "field_order": (
+            "fields 0-17 match opensky_api.StateVector.keys, i.e. the wire array order; "
+            "snapshot_time is appended and comes from the enclosing OpenSkyStates"
+        ),
         "units": "SI as received: metres, m/s, degrees. No unit conversion in bronze.",
     },
 )
 
 
+# Source names. Each doubles as the subdirectory under the bronze root and as
+# the filename prefix, so there is exactly one string to get right per source.
+OPENSKY_SOURCE = "opensky"
+METAR_SOURCE = "metar"
+TAF_SOURCE = "taf"
+
+
+def state_vectors_to_rows(snapshot: OpenSkyStates) -> list[dict[str, Any]]:
+    """Flatten a snapshot into rows shaped for STATE_VECTOR_SCHEMA.
+
+    Reads by field name off the schema rather than by array index. OpenSky can
+    return a vector shorter than the full 18 elements, and the library builds
+    its attributes with `zip`, so the trailing fields are simply absent rather
+    than None; `getattr(..., None)` turns that into a null instead of an
+    AttributeError that would drop the whole poll.
+
+    `snapshot_time` is stamped onto every row from the enclosing snapshot, since
+    it lives on OpenSkyStates rather than on the individual vectors.
+    """
+    # Read once, outside the loop: it is the same value for every row, and it is
+    # what makes the rows of one poll distinguishable from the next poll's.
+    snapshot_time = getattr(snapshot, "time", None)
+    names = [field.name for field in STATE_VECTOR_SCHEMA if field.name != "snapshot_time"]
+    return [
+        {name: getattr(vector, name, None) for name in names} | {"snapshot_time": snapshot_time}
+        for vector in snapshot.states
+    ]
+
+
 class BronzeWriter:
-    def __init__(self, root: Path) -> None:
+    """One Parquet file per source per UTC day, appended in place.
+
+    Layout under `root` (normally `settings.bronze_dir`, so `data/bronze/...`;
+    pass `settings.data_dir` instead if you want `data/opensky/...` flat):
+
+        <root>/opensky/2026-08/opensky_24082026.parquet
+        <root>/metar/2026-08/metar_24082026.parquet
+        <root>/taf/2026-08/taf_24082026.parquet
+
+    Parquet files are immutable, so "append" here means read, concatenate and
+    rewrite. That is quadratic in writes per day, which is worth stating plainly
+    before it surprises anyone: at the scheduled cadences it costs nothing.
+    OpenSky at 480 polls a day and ~25 aircraft a poll ends the day around
+    12,000 rows and a couple of MB, so the last rewrite of the day reads and
+    writes a couple of MB, and the whole day moves well under a gigabyte of I/O.
+    METAR (48 writes) and TAF (4) are noise beside it. It stops being free if
+    you add many airports or drop the OpenSky interval much below a minute, at
+    which point the fix is one file per poll plus a nightly compaction, not a
+    faster rewrite.
+    """
+
+    def __init__(self, root: Path, *, compression: str = "zstd") -> None:
         """
         Args:
             root: Bronze root, normally `settings.bronze_dir`.
@@ -209,23 +296,95 @@ class BronzeWriter:
                 without configuration.
         """
         self._root = root
+        self._compression = compression
 
     def partition_dir(self, source: str, partition_time: datetime) -> Path:
-        return (
-                self._root
-                / source
-                / f"{partition_time.strftime('%Y-%m')}"
-                )
+        return self._root / source / f"{partition_time.strftime('%Y-%m')}"
 
+    def file_path(self, source: str, partition_time: datetime) -> Path:
+        """The day file for `source`, e.g. `opensky/2026-08/opensky_24082026.parquet`.
+        """
+        return self.partition_dir(source, partition_time) / (
+            f"{source}_{partition_time.strftime('%d%m%Y')}.parquet"
+        )
 
+    def write(
+        self,
+        source: str,
+        records: Sequence[Mapping[str, Any]],
+        partition_time: datetime,
+        *,
+        schema: pa.Schema | None = None,
+    ) -> WriteResult:
+        """Append `records` to the day file for `source`.
 
-def get_working_dir():
-    return os.getcwd()
+        Args:
+            source: One of OPENSKY_SOURCE / METAR_SOURCE / TAF_SOURCE.
+            records: Raw rows, as plain mappings.
+            partition_time: Which day this batch belongs to. Must be timezone
+                aware. Take it from the data itself (the snapshot time, the
+                observation time) and not from the wall clock at write time, or
+                a batch polled at 00:00:30Z lands in the wrong day whenever a
+                retry pushes the write past midnight.
+            schema: Strongly recommended, and required in practice for OpenSky.
+                Without it pyarrow infers types per batch, and a column where
+                every aircraft in this poll happened to report nothing infers as
+                `null` rather than as its real type. The next poll infers
+                `double`, the two schemas no longer match, and the append fails.
+                Passing STATE_VECTOR_SCHEMA pins the types once.
 
+        Returns:
+            `rows` counts the records appended by THIS call; `bytes_written` is
+            the size of the whole resulting file, which includes everything
+            written earlier the same day.
+        """
+        if not records:
+            logger.debug("bronze.write.empty", source=source)
+            return WriteResult(path=None, rows=0, bytes_written=0)
 
-def create_bronze_writer_session():
-    spark = SparkSession().builder.appName('Bronze Writer').getOrCreate()
-    return spark
+        if partition_time.tzinfo is None:
+            raise ValueError(
+                f"partition_time must be timezone aware, got naive {partition_time!r}. "
+                f"A naive value silently adopts the machine's local zone, which in "
+                f"SGT (UTC+8) files everything after 16:00 UTC under tomorrow's date "
+                f"and quietly splits every day's data across two files."
+            )
 
-def state_vector_writer(client: SparkSession, payload: OpenSkyStates):
-    raise NotImplementedError
+        partition_time = partition_time.astimezone(UTC)
+        out_dir = self.file_path(source, partition_time)
+        incoming = pa.Table.from_pylist(list(records), schema=schema)
+
+        if out_dir.exists():
+            existing = pq.read_table(out_dir)
+            # `permissive` lets a column that was all-null yesterday take a real
+            # type today, and tolerates a field appearing or vanishing upstream.
+            # With an explicit schema neither happens, but METAR and TAF have no
+            # schema yet, and a strict concat there would fail on ordinary data.
+            table = pa.concat_tables([existing, incoming], promote_options="permissive")
+        else:
+            table = incoming
+
+        out_dir.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write beside the target, then rename over it. `os.replace` is atomic
+        # within a filesystem, so a crash or a schema rejection mid-write leaves
+        # the previous file untouched rather than truncated. Without this, one
+        # bad batch late in the day destroys every earlier poll in that file.
+        tmp = out_dir.with_name(f"{out_dir.name}.tmp")
+        try:
+            pq.write_table(table, tmp, compression=self._compression)
+            os.replace(tmp, out_dir)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
+
+        size = out_dir.stat().st_size
+        logger.debug(
+            "bronze.write.completed",
+            source=source,
+            path=str(out_dir),
+            rows_appended=len(records),
+            rows_total=table.num_rows,
+            bytes=size,
+        )
+        return WriteResult(path=out_dir, rows=len(records), bytes_written=size)
