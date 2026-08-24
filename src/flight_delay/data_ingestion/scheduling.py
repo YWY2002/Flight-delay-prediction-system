@@ -86,8 +86,7 @@ def run_scheduler(
     """Run `tasks` on their tick grids until stopped.
 
     Tasks sharing a tick instant all run on the same wake-up, in the order
-    given. That is what makes METAR and TAF arrive together at 18:01Z rather
-    than as two separate wake-ups a moment apart.
+    given.
 
     A task whose poll overruns its own interval does not accumulate a backlog:
     the next tick is computed from the time the poll *finished*, so a slow cycle

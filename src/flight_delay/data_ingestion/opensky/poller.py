@@ -205,7 +205,6 @@ def poll_airport_arrival_once(client: OpenSkyApi, details: PollingDetails) -> li
         _ARRIVAL_SETTLE_HOURS,
     )
 
-
 def poll_states_once(client: OpenSkyApi, bbox: BoundingBox) -> OpenSkyStates:
     """Every aircraft state vector currently inside `bbox`.
 

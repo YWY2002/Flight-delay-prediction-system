@@ -18,7 +18,7 @@ from flight_delay.common.timeutil import (
     get_today_6am_utc,
     get_today_12pm_utc,
     get_today_6pm_utc)
-import time
+import os
 
 def main() -> None:
     settings = get_settings()
@@ -26,12 +26,15 @@ def main() -> None:
     client = TrackedOpenSkyApi(token_manager=TokenManager(client_id, client_secret))
     bbox = wsss_bounding_box(settings)
 
-    # print(poll_states_once(client, bbox))
+    print(poll_states_once(client, bbox))
     # http = weather_http_client(settings)
     # details = WeatherPollingDetails(settings=settings, stations=("WSSS",))
     # metars = poll_metar_once(http, details)
     # tafs   = poll_taf_once(http, details)
     # run_states_scheduler(client, bbox, BronzeWriterfunction)
+    
+
+    print("Current Working Directory:", os.getcwd())
 
 
 
