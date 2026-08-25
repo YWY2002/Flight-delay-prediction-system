@@ -1,0 +1,30 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "WriteBronzeObjects",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:AbortMultipartUpload"],
+      "Resource": "arn:aws:s3:::CHANGE-ME-bucket/bronze/*"
+    },
+    {
+      "Sid": "ListForSyncComparison",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::CHANGE-ME-bucket",
+      "Condition": {"StringLike": {"s3:prefix": "bronze/*"}}
+    },
+    {
+      "Sid": "ReadOwnObjectsForSyncComparison",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::CHANGE-ME-bucket/bronze/*"
+    },
+    {
+      "Sid": "ReadOpenSkyCredentials",
+      "Effect": "Allow",
+      "Action": ["ssm:GetParameter", "ssm:GetParameters"],
+      "Resource": "arn:aws:ssm:*:*:parameter/flight-delay/*"
+    }
+  ]
+}

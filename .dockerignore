@@ -31,6 +31,8 @@ build
 frontend
 ingestion_example
 tests
+# Runs on the host alongside the container, never inside it.
+deploy
 *.ipynb
 *.md
 !README.md

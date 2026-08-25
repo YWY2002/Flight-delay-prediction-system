@@ -1,0 +1,13 @@
+[Unit]
+Description=Sync flight-delay bronze lake from EBS to S3
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=BRONZE_DIR=/mnt/bronze
+Environment=S3_URI=s3://CHANGE-ME-bucket/bronze
+ExecStart=/usr/local/bin/sync-to-s3.sh
+# Runs as root so it can read files the container wrote as uid 1001. Swap to a
+# dedicated user if you would rather chown the tree instead.
+User=root

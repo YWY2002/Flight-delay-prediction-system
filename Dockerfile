@@ -17,6 +17,15 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never
 
+# git, because `opensky-api` is not resolved from PyPI. pyproject.toml pins it
+# to a GitHub checkout via [tool.uv.sources], so uv shells out to `git clone` to
+# build it, and the uv base image ships no git binary. Installed before the
+# dependency layer so it stays cached across lockfile edits. Builder-stage only:
+# the runtime image gets the built venv, never the source, so it needs no git.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # pyspark alone is 496 MB, polars another 193 MB, and neither is imported by

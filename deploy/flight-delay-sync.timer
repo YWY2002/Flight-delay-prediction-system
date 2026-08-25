@@ -1,0 +1,14 @@
+[Unit]
+Description=Hourly bronze -> S3 sync
+
+[Timer]
+# :17 past the hour. Kept clear of the weather polls at :01 and :31 so a sync
+# and a rewrite of the same day file are not routinely racing; the atomic
+# rename means a collision is harmless, but there is no reason to invite one.
+OnCalendar=*:17
+# Catch up after a reboot or a stopped instance instead of silently waiting for
+# the next slot.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
