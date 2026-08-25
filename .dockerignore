@@ -40,5 +40,10 @@ ARCHITECTURE.md
 flight-delay-pipeline-plan.md
 .pre-commit-config.yaml
 .gitattributes
-Dockerfile
+# Now at src/flight_delay/data_ingestion/Dockerfile, so it would otherwise be
+# swept up by `COPY src ./src` and end up inside the wheel. The builder reads
+# it via compose's `dockerfile:` key, not from the context, so excluding it
+# here does not affect the build.
+**/Dockerfile
+docker-compose.yml
 .dockerignore

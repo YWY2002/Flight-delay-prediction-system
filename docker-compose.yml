@@ -1,0 +1,77 @@
+# Ingestion service.
+#
+#   docker compose up -d --build
+#   docker compose logs -f ingest
+#   docker compose ps
+#   docker compose down          # stops the container; the data volume survives
+#
+# Using compose rather than `docker run` is what keeps the container named and
+# singular. `docker run` creates a new one on every invocation, and two pollers
+# against the same day file means the later atomic rename silently discards the
+# other's rows.
+
+services:
+  ingest:
+    build:
+      # Root, not the Dockerfile's directory. The build needs pyproject.toml,
+      # uv.lock and src/, and every COPY in the Dockerfile is written relative
+      # to this. Moving the Dockerfile did not change where it builds from.
+      context: .
+      dockerfile: src/flight_delay/data_ingestion/Dockerfile
+    image: flight-delay-ingest:latest
+    container_name: flight-delay-ingest
+
+    # Deliberately restarts on exit but NOT on a clean `docker compose down`.
+    # The scheduler exits on purpose when a poll fails non-retryably (a 400 or a
+    # 403 cannot fix itself), so this brings it back once the cause is fixed, and
+    # after an instance reboot.
+    restart: unless-stopped
+
+    # Real PID 1 to reap strays. The image uses an exec-form CMD, so SIGTERM
+    # still reaches Python directly and the scheduler's handler drains its stop
+    # event: `docker compose down` returns in about a second, not after the
+    # 10 second SIGKILL timeout.
+    init: true
+
+    # FDP_OPENSKY_CLIENT_ID / _SECRET live here and are gitignored. Never move
+    # them into `environment:` below, which is committed.
+    env_file:
+      - .env
+
+    environment:
+      # Console rendering locally; flip to true when a log shipper is reading.
+      FDP_LOG_JSON: "false"
+
+    volumes:
+      # Named volume by default: managed by Docker, survives `down`, invisible
+      # to the host filesystem. Read it with
+      #   docker compose exec ingest ls -R /data/bronze
+      #   docker cp flight-delay-ingest:/data/bronze ./bronze-backup
+      - bronze-data:/data
+      # Prefer plain files you can ls, scp and back up? Comment the line above
+      # and use one of these instead. Same layout either way.
+      # - /mnt/bronze:/data          # EC2, on the separate EBS volume
+      # - ./data/docker:/data        # local development
+
+    # "Has a poll landed recently", which is the only health question that
+    # matters here: the process can be alive and quietly collecting nothing.
+    # OpenSky ticks every 3 minutes, so 10 minutes is roughly three missed polls.
+    # start_period covers the cold start, where the first tick waits for the next
+    # 3-minute grid boundary and no file exists yet.
+    healthcheck:
+      test: ["CMD-SHELL", "find /data/bronze -name '*.parquet' -mmin -10 | grep -q ."]
+      interval: 2m
+      timeout: 10s
+      retries: 3
+      start_period: 5m
+
+    # Unbounded container logs are a slow way to fill a small EC2 root volume.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  bronze-data:
+    name: flight-delay-bronze

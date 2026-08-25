@@ -92,17 +92,23 @@ Replace `CHANGE-ME-bucket` in both.
 ## 5. Run the container
 
 ```bash
-docker run -d --name flight-delay-ingest --restart=unless-stopped --init \
-  --env-file /etc/flight-delay.env \
-  -v /mnt/bronze:/data \
-  YOUR-ECR-REPO/flight-delay-ingest:latest
+cd ~/Flight-delay-prediction-system
+docker compose up -d --build
+docker compose ps
+docker compose logs -f ingest
 ```
 
-`--restart=unless-stopped` matters: the scheduler exits deliberately on a
-non-retryable error, and you want it back after a reboot or once you have fixed
-the cause. `--init` gives a real PID 1 to reap strays; the image already uses an
-exec-form CMD so SIGTERM reaches Python directly (verified: `docker stop`
-returns in ~800 ms with exit code 0, not a 10 s SIGKILL).
+Compose owns the container name and the restart policy, so use it rather than
+`docker run`: `docker run` creates a new container on every call, and two
+pollers against one day file means the later atomic rename silently drops the
+other's rows.
+
+The build context is the repo root even though the Dockerfile now lives at
+`src/flight_delay/data_ingestion/Dockerfile`; `docker-compose.yml` wires that up.
+
+Storage defaults to the named volume `flight-delay-bronze`. To put bronze on the
+EBS volume instead, swap the `volumes:` entry in `docker-compose.yml` for
+`- /mnt/bronze:/data`, which is what the sync in the next section reads.
 
 ## 6. Hourly sync
 

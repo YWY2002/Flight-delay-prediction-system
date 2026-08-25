@@ -1,7 +1,24 @@
 # Ingestion service image: the poller loop only.
 #
-# Build:  docker build -t flight-delay-ingest .
-# Run:    docker run --init --env-file .env -v fdp-data:/data flight-delay-ingest
+# Normal use is via docker-compose.yml in the repo root:
+#
+#   docker compose up -d --build     start (or rebuild and restart) the poller
+#   docker compose logs -f ingest    follow it
+#   docker compose restart ingest    restart the SAME container
+#   docker compose down              stop it (the data volume survives)
+#
+# Compose is what keeps the container named and singular. `docker run` CREATES a
+# container on every call, so running it twice by hand leaves a stopped stranger
+# named boring_albattani behind, and if the first is still up you get two pollers
+# rewriting the same day file, where the later rename silently discards the
+# other's rows.
+#
+# THE BUILD CONTEXT IS THE REPO ROOT, not this directory. Every COPY below is
+# relative to that root, because the build needs pyproject.toml, uv.lock and
+# src/ which all live there. Building by hand therefore needs both -f and a
+# trailing dot:
+#
+#   docker build -f src/flight_delay/data_ingestion/Dockerfile -t flight-delay-ingest .
 #
 # For a Graviton EC2 instance (t4g.*), build with --platform linux/arm64.
 
