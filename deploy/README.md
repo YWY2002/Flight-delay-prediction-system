@@ -106,6 +106,54 @@ other's rows.
 The build context is the repo root even though the Dockerfile now lives at
 `src/flight_delay/data_ingestion/Dockerfile`; `docker-compose.yml` wires that up.
 
+### If `docker compose` is not available
+
+Amazon Linux's `docker` package ships without the Compose plugin, so
+`docker compose up -d` fails with `unknown shorthand flag: 'd' in -d`. Install
+the plugin (note `uname -m` gives `aarch64` on Graviton):
+
+```bash
+sudo mkdir -p /usr/local/lib/docker/cli-plugins
+sudo curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m)"   -o /usr/local/lib/docker/cli-plugins/docker-compose
+sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+docker compose version
+```
+
+Compose v2 then needs **buildx 0.17.0+** for `--build`, and Amazon Linux does
+not ship that either (`compose build requires buildx 0.17.0 or later`). Note the
+two projects name their release assets differently: compose uses `x86_64` /
+`aarch64` so `uname -m` drops straight in, while buildx uses `amd64` / `arm64`
+and embeds the version in the filename, so the `latest/download` shortcut does
+not work for it.
+
+```bash
+BX_VER=$(curl -fsSL https://api.github.com/repos/docker/buildx/releases/latest   | grep -m1 '"tag_name"' | cut -d'"' -f4)
+case "$(uname -m)" in
+  x86_64)  BX_ARCH=amd64 ;;
+  aarch64) BX_ARCH=arm64 ;;
+esac
+echo "installing buildx ${BX_VER} for ${BX_ARCH}"
+sudo mkdir -p /usr/local/lib/docker/cli-plugins
+sudo curl -fsSL "https://github.com/docker/buildx/releases/download/${BX_VER}/buildx-${BX_VER}.linux-${BX_ARCH}"   -o /usr/local/lib/docker/cli-plugins/docker-buildx
+sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
+docker buildx version
+```
+
+buildx is not optional here: the Dockerfile uses `RUN --mount=type=cache` and
+`--mount=type=bind`, which only BuildKit understands. The legacy builder fails
+to parse them outright.
+
+Or skip Compose entirely. This is the same container, flag for flag:
+
+```bash
+docker build -f src/flight_delay/data_ingestion/Dockerfile -t flight-delay-ingest .
+
+docker run -d --name flight-delay-ingest --restart unless-stopped --init   --env-file .env -e FDP_LOG_JSON=false   -v flight-delay-bronze:/data   --health-cmd "find /data/bronze -name '*.parquet' -mmin -10 | grep -q ."   --health-interval 2m --health-timeout 10s --health-retries 3 --health-start-period 5m   --log-opt max-size=10m --log-opt max-file=3   flight-delay-ingest
+```
+
+Run that **once**. Afterwards use `docker restart flight-delay-ingest`, never
+`docker run` again.
+
 Storage defaults to the named volume `flight-delay-bronze`. To put bronze on the
 EBS volume instead, swap the `volumes:` entry in `docker-compose.yml` for
 `- /mnt/bronze:/data`, which is what the sync in the next section reads.

@@ -28,15 +28,19 @@ from flight_delay.data_ingestion.scheduling import ScheduledTask, run_scheduler
 from flight_delay.data_ingestion.weather.poller import WeatherPollingDetails, weather_http_client
 from flight_delay.data_ingestion.weather.scheduler import build_metar_task, build_taf_task
 from flight_delay.data_ingestion.writer import (
+    METAR_SCHEMA,
     METAR_SOURCE,
     OPENSKY_SOURCE,
     STATE_VECTOR_SCHEMA,
+    TAF_SCHEMA,
     TAF_SOURCE,
     BronzeWriter,
     state_vectors_to_rows,
+    weather_records_to_rows,
 )
 
 logger = get_logger(__name__)
+
 
 def build_tasks(settings: Settings, writer: BronzeWriter) -> list[ScheduledTask]:
     """Wire pollers to the writer and return the tasks to schedule.
@@ -55,15 +59,26 @@ def build_tasks(settings: Settings, writer: BronzeWriter) -> list[ScheduledTask]
             schema=STATE_VECTOR_SCHEMA,
         )
 
+    # Both weather sinks pass a schema for the same reason OpenSky does: without
+    # one, `visib` infers as double while conditions are poor and as string once
+    # they clear ("10+"), and the append fails partway through the day.
     def on_metar(records: list[dict[str, Any]]) -> None:
-        writer.write(METAR_SOURCE, records, utc_now())
+        writer.write(
+            METAR_SOURCE,
+            weather_records_to_rows(records, METAR_SCHEMA),
+            utc_now(),
+            schema=METAR_SCHEMA,
+        )
 
     def on_taf(records: list[dict[str, Any]]) -> None:
-        writer.write(TAF_SOURCE, records, utc_now())
+        writer.write(
+            TAF_SOURCE,
+            weather_records_to_rows(records, TAF_SCHEMA),
+            utc_now(),
+            schema=TAF_SCHEMA,
+        )
 
-    client = TrackedOpenSkyApi(
-        token_manager=TokenManager(*settings.require_opensky_credentials())
-    )
+    client = TrackedOpenSkyApi(token_manager=TokenManager(*settings.require_opensky_credentials()))
     http = weather_http_client(settings)
     stations = WeatherPollingDetails(settings=settings, stations=settings.airports)
 
